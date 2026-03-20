@@ -1,0 +1,47 @@
+---
+description: Storybook MCP tool usage and component development workflow
+globs: src/components/**/*.{tsx,css}, **/*.stories.tsx, .storybook/**
+alwaysApply: false
+---
+
+# Storybook MCP Workflow
+
+This project has a Storybook MCP server at `http://localhost:6006/mcp` when Storybook is running.
+
+## Before touching any component
+
+1. Call `list-all-documentation` to discover what exists.
+2. Call `get-documentation` for the specific component -- read the actual prop interface. **Never guess props.**
+3. If a prop isn't in the documentation, it doesn't exist. Ask the user before inventing one.
+
+## Before writing or editing stories
+
+1. Call `get-storybook-story-instructions` to get current project conventions.
+2. Follow CSF3 format: `Meta<typeof Component>` + `StoryObj` + named exports.
+3. Set `title` to match folder hierarchy: `'Atoms/Button'`, `'Molecules/Card'`, `'Organisms/Navbar'`, `'Pages/Dashboard'`.
+4. Always include a `Default` story with realistic, production-like props.
+5. Use `args` for controllable stories, `render` for multi-variant showcases.
+6. Add play functions for interactive behavior (dismiss, submit, sort, toggle).
+
+## After any change
+
+1. Call `run-story-tests` to run interaction tests + accessibility checks.
+2. Fix all failures before considering the task done.
+3. Call `preview-stories` to generate a visual preview.
+
+## Styling rules
+
+- Use CSS Modules (`*.module.css`) consuming tokens from `src/tokens/design-tokens.css`.
+- Reference tokens as `var(--color-primary-500)`, `var(--space-4)`, etc.
+- Never hardcode colors, spacing, or radii -- always use token variables.
+
+## Component placement
+
+| Level | Folder | Examples |
+|-------|--------|----------|
+| Atoms | `src/components/atoms/` | Button, Input, Badge, Avatar, Toggle |
+| Molecules | `src/components/molecules/` | Card, Alert, Tooltip, SearchBar |
+| Organisms | `src/components/organisms/` | Navbar, Sidebar, DataTable, Form |
+| Pages | `src/components/pages/` | LoginPage, Dashboard |
+
+New components go in a folder with three files: `Name.tsx`, `Name.module.css`, `Name.stories.tsx`.
