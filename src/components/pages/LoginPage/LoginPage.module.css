@@ -1,0 +1,229 @@
+.page {
+  display: flex;
+  min-height: 100vh;
+  font-family: var(--font-sans);
+  color: var(--color-neutral-900);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.hero {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: var(--space-16);
+  overflow: hidden;
+  color: var(--color-white);
+  background: linear-gradient(
+    135deg,
+    var(--color-primary-600) 0%,
+    var(--color-primary-800) 48%,
+    var(--color-primary-900) 100%
+  );
+  box-shadow: inset 0 0 120px rgb(0 0 0 / 0.12);
+}
+
+.hero::before {
+  content: '';
+  position: absolute;
+  inset: -20%;
+  background:
+    radial-gradient(
+      circle at 18% 28%,
+      rgb(255 255 255 / 0.14) 0%,
+      transparent 42%
+    ),
+    radial-gradient(
+      circle at 82% 72%,
+      rgb(255 255 255 / 0.1) 0%,
+      transparent 38%
+    ),
+    radial-gradient(
+      circle at 55% 12%,
+      rgb(129 140 248 / 0.35) 0%,
+      transparent 45%
+    ),
+    radial-gradient(
+      circle at 8% 88%,
+      rgb(49 46 129 / 0.5) 0%,
+      transparent 50%
+    );
+  pointer-events: none;
+}
+
+.heroTitle {
+  position: relative;
+  z-index: 1;
+  margin: 0 0 var(--space-4);
+  font-size: var(--text-3xl);
+  font-weight: var(--font-bold);
+  letter-spacing: -0.02em;
+  line-height: var(--leading-tight);
+  text-shadow: 0 2px 24px rgb(0 0 0 / 0.15);
+}
+
+.heroSubtitle {
+  position: relative;
+  z-index: 1;
+  max-width: 400px;
+  margin: 0;
+  font-size: var(--text-lg);
+  line-height: var(--leading-relaxed);
+  opacity: 0.92;
+}
+
+.formSide {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-8);
+  background: var(--color-white);
+  background-image: radial-gradient(
+    var(--color-neutral-100) 1px,
+    transparent 1px
+  );
+  background-size: 24px 24px;
+}
+
+.formContainer {
+  width: 100%;
+  max-width: 400px;
+  padding: var(--space-8);
+  border-radius: var(--radius-xl);
+  background: var(--color-white);
+  box-shadow: var(--shadow-xl);
+  border: 1px solid var(--color-neutral-100);
+}
+
+.logo {
+  margin: 0 0 var(--space-8);
+  font-size: var(--text-2xl);
+  font-weight: var(--font-bold);
+  color: var(--color-primary-600);
+  letter-spacing: -0.03em;
+}
+
+.formTitle {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-xl);
+  font-weight: var(--font-semibold);
+  color: var(--color-neutral-900);
+  letter-spacing: -0.02em;
+}
+
+.formSubtitle {
+  margin: 0 0 var(--space-8);
+  font-size: var(--text-sm);
+  color: var(--color-neutral-500);
+  line-height: var(--leading-normal);
+}
+
+.fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.options {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: var(--space-4);
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.forgotLink {
+  padding: 0;
+  border: none;
+  font-family: inherit;
+  font-size: var(--text-sm);
+  color: var(--color-primary-500);
+  background: transparent;
+  cursor: pointer;
+  transition: color var(--transition-fast);
+}
+
+.forgotLink:hover {
+  color: var(--color-primary-600);
+  text-decoration: underline;
+}
+
+.forgotLink:focus-visible {
+  outline: 2px solid var(--color-primary-500);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.submitArea {
+  margin-top: var(--space-6);
+}
+
+.divider {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin-top: var(--space-6);
+}
+
+.divider::before,
+.divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--color-neutral-200);
+}
+
+.dividerText {
+  flex-shrink: 0;
+  font-size: var(--text-sm);
+  color: var(--color-neutral-400);
+  text-transform: lowercase;
+}
+
+.signupText {
+  margin: var(--space-6) 0 0;
+  font-size: var(--text-sm);
+  color: var(--color-neutral-500);
+  text-align: center;
+  line-height: var(--leading-normal);
+}
+
+.signupLink {
+  font-weight: var(--font-medium);
+  color: var(--color-primary-500);
+  cursor: pointer;
+  transition: color var(--transition-fast);
+}
+
+.signupLink:hover {
+  color: var(--color-primary-600);
+  text-decoration: underline;
+}
+
+.signupLink:focus-visible {
+  outline: 2px solid var(--color-primary-500);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+@media (max-width: 768px) {
+  .hero {
+    display: none;
+  }
+
+  .formSide {
+    padding: var(--space-6);
+    background-image: none;
+  }
+
+  .formContainer {
+    padding: 0;
+    border: none;
+    box-shadow: none;
+    border-radius: 0;
+  }
+}

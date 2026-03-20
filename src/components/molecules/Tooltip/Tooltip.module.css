@@ -1,0 +1,103 @@
+.wrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.tooltip {
+  position: absolute;
+  z-index: 50;
+  padding: var(--space-1) var(--space-3);
+  background-color: var(--color-neutral-800);
+  color: var(--color-white);
+  font-size: var(--text-xs);
+  font-family: var(--font-sans);
+  font-weight: var(--font-normal);
+  border-radius: var(--radius-md);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  box-shadow: var(--shadow-lg);
+  transition:
+    opacity var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.wrapper:hover .tooltip {
+  opacity: 1;
+}
+
+.tooltip.top {
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: var(--space-2);
+}
+
+.wrapper:hover .tooltip.top {
+  transform: translateX(-50%) translateY(-4px);
+}
+
+.tooltip.bottom {
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: var(--space-2);
+}
+
+.tooltip.left {
+  right: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  margin-right: var(--space-2);
+}
+
+.tooltip.right {
+  left: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  margin-left: var(--space-2);
+}
+
+.tooltip::after {
+  content: '';
+  position: absolute;
+  width: 0;
+  height: 0;
+  border-style: solid;
+}
+
+/* Arrow points down toward trigger */
+.tooltip.top::after {
+  bottom: -4px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-width: 4px 4px 0;
+  border-color: var(--color-neutral-800) transparent transparent;
+}
+
+/* Arrow points up toward trigger */
+.tooltip.bottom::after {
+  top: -4px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-width: 0 4px 4px;
+  border-color: transparent transparent var(--color-neutral-800);
+}
+
+/* Arrow points right toward trigger */
+.tooltip.left::after {
+  right: -4px;
+  top: 50%;
+  transform: translateY(-50%);
+  border-width: 4px 0 4px 4px;
+  border-color: transparent transparent transparent var(--color-neutral-800);
+}
+
+/* Arrow points left toward trigger */
+.tooltip.right::after {
+  left: -4px;
+  top: 50%;
+  transform: translateY(-50%);
+  border-width: 4px 4px 4px 0;
+  border-color: transparent var(--color-neutral-800) transparent transparent;
+}

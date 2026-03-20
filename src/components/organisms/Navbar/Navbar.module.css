@@ -1,0 +1,90 @@
+.navbar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4) var(--space-6);
+  font-family: var(--font-sans);
+  background-color: var(--color-white);
+  border-bottom: 1px solid var(--color-neutral-200);
+  box-shadow: var(--shadow-sm);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.logo {
+  font-size: var(--text-xl);
+  font-weight: var(--font-bold);
+  color: var(--color-primary-600);
+  text-decoration: none;
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.navLink {
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--color-neutral-500);
+  text-decoration: none;
+  cursor: pointer;
+  background-color: transparent;
+  border: none;
+  border-radius: var(--radius-md);
+  transition: color var(--transition-fast), background-color var(--transition-fast);
+}
+
+.navLink:hover {
+  color: var(--color-neutral-900);
+  background-color: var(--color-neutral-50);
+}
+
+.navLink.active {
+  color: var(--color-primary-600);
+  background-color: var(--color-primary-50);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.menuButton {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .nav {
+    display: none;
+  }
+
+  .menuButton {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .navbar.open .nav {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    left: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-1);
+    padding: var(--space-4);
+    background-color: var(--color-white);
+    border-bottom: 1px solid var(--color-neutral-200);
+    box-shadow: var(--shadow-md);
+  }
+}
