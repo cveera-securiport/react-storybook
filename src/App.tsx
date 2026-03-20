@@ -1,11 +1,41 @@
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
+import { LoginPage } from './components/pages/LoginPage/LoginPage'
+import { Dashboard } from './components/pages/Dashboard/Dashboard'
+
+function LoginRoute() {
+  const navigate = useNavigate()
+
+  return (
+    <LoginPage
+      onLogin={(email, password) => {
+        console.log('Login:', email, password)
+        navigate('/dashboard')
+      }}
+      onForgotPassword={() => console.log('Forgot password')}
+      onSignUp={() => console.log('Sign up')}
+    />
+  )
+}
+
+function DashboardRoute() {
+  const navigate = useNavigate()
+
+  return (
+    <Dashboard
+      onNavigate={(href) => navigate(href)}
+    />
+  )
+}
+
 function App() {
   return (
-    <div style={{ padding: '2rem', fontFamily: 'system-ui, sans-serif' }}>
-      <h1>React Storybook Demo</h1>
-      <p>
-        Run <code>npm run storybook</code> to launch the component library.
-      </p>
-    </div>
+    <BrowserRouter>
+      <Routes>
+        <Route path="/login" element={<LoginRoute />} />
+        <Route path="/dashboard" element={<DashboardRoute />} />
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
+    </BrowserRouter>
   )
 }
 

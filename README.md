@@ -1,11 +1,12 @@
 # React Storybook Demo
 
-A design-system demo built with React, TypeScript, and Storybook 8. It showcases how components at every level of atomic design (atoms, molecules, organisms, pages) can be developed, documented, and tested in isolation using Storybook.
+A design-system demo built with React, TypeScript, and Storybook 8. It includes a working React application with client-side routing (Login and Dashboard pages) and a full Storybook component library showcasing every level of atomic design.
 
 ## Tech Stack
 
 - **React 18** + **TypeScript**
 - **Vite** for dev server and builds
+- **React Router** for client-side navigation
 - **Storybook 8** with Controls, Actions, Viewport, A11y, Docs, and Interactions addons
 - **CSS Modules** with design tokens via CSS custom properties
 
@@ -22,13 +23,22 @@ npm run dev
 npm run storybook
 ```
 
-Storybook opens at **http://localhost:6006**.
+The React app opens at **http://localhost:5173** and Storybook at **http://localhost:6006**.
+
+## The React App
+
+Running `npm run dev` launches a working application with two routes:
+
+- **`/login`** -- A split-screen login page. Enter any email and password (fields just can't be empty) and click **Sign in** to navigate to the dashboard.
+- **`/dashboard`** -- A full dashboard with navbar, collapsible sidebar, stat cards, search bar, and a sortable data table.
+
+All other routes redirect to `/login`.
 
 ## Available Scripts
 
 | Script | Description |
 |--------|-------------|
-| `npm run dev` | Start the Vite dev server |
+| `npm run dev` | Start the React app (login → dashboard) |
 | `npm run build` | Type-check and build for production |
 | `npm run preview` | Preview the production build |
 | `npm run storybook` | Launch Storybook on port 6006 |

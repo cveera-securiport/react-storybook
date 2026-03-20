@@ -1,3 +1,5 @@
+@import './tokens/design-tokens.css';
+
 *,
 *::before,
 *::after {
@@ -7,7 +9,9 @@
 }
 
 body {
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  background-color: var(--color-neutral-50);
+  color: var(--color-neutral-900);
 }
