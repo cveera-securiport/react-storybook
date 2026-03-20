@@ -91,3 +91,15 @@ All visual decisions (colors, typography, spacing, radii, shadows) are defined a
 - **Accessibility (A11y)** -- Real-time accessibility auditing
 - **Interaction Testing** -- Play functions that simulate user flows on Alert, Form, LoginPage, and DataTable
 - **Viewport** -- Responsive testing on Navbar and page-level stories
+
+## Documentation
+
+Detailed guides live in the `docs/` folder:
+
+| Document | Description |
+|----------|-------------|
+| [Storybook Architecture](docs/storybook-architecture.md) | How the config files connect, design tokens, data flow, atomic design rationale |
+| [Writing Stories](docs/writing-stories.md) | Anatomy of a story file, play functions, 8-point checklist for good stories |
+| [Addons and Tooling](docs/addons-and-tooling.md) | Installed addons, Storybook MCP addon for AI agents, CI testing |
+| [FAQ](docs/faq.md) | Data mocking, layout, viewports, autodocs, CSS Modules, design tokens |
+| [Troubleshooting](docs/troubleshooting.md) | Common issues and solutions |

@@ -1,6 +1,13 @@
 # Storybook Architecture Guide
 
-How Storybook is configured in this project, how the pieces connect, and the patterns used in stories.
+How Storybook is configured in this project and how the pieces connect.
+
+For related topics, see the other docs in this folder:
+
+- [Writing Stories](./writing-stories.md) -- How to write good stories, anatomy of a story file, play functions
+- [Addons and Tooling](./addons-and-tooling.md) -- Installed addons, MCP addon for AI, CI testing
+- [FAQ](./faq.md) -- Common questions about data mocking, layout, viewports, autodocs, and more
+- [Troubleshooting](./troubleshooting.md) -- Solutions for common issues
 
 ---
 
@@ -8,24 +15,70 @@ How Storybook is configured in this project, how the pieces connect, and the pat
 
 ```
 .storybook/
-  main.ts        ─── What to load (stories, addons, framework)
-  preview.ts     ─── How to render (global styles, decorators, parameters)
-  theme.ts       ─── How the Storybook UI itself looks (branding)
+  main.ts        --- What to load (stories, addons, framework)
+  preview.ts     --- How to render (global styles, decorators, parameters)
+  theme.ts       --- How the Storybook UI itself looks (branding)
 
 src/
-  tokens/design-tokens.css   ─── Shared design language (CSS custom properties)
+  tokens/design-tokens.css   --- Shared design language (CSS custom properties)
   components/
     atoms/Button/
-      Button.tsx             ─── The component
-      Button.module.css      ─── Scoped styles consuming design tokens
-      Button.stories.tsx     ─── Stories that document and test the component
+      Button.tsx             --- The component
+      Button.module.css      --- Scoped styles consuming design tokens
+      Button.stories.tsx     --- Stories that document and test the component
 ```
 
 The three `.storybook/` files configure Storybook itself. Every component then has a co-located `.stories.tsx` file that Storybook discovers automatically.
 
 ---
 
-## `.storybook/main.ts` — The Entry Point
+## Two Entry Points: The App vs Storybook
+
+This project has two ways to run, and they serve different purposes:
+
+| | `npm run dev` | `npm run storybook` |
+|---|---|---|
+| **What it runs** | The React application (Vite) | The Storybook component explorer |
+| **URL** | http://localhost:5173 | http://localhost:6006 |
+| **What you see** | Login page -> Dashboard (with routing) | Every component in isolation with docs |
+| **Who it's for** | End users, stakeholders reviewing the product | Developers, designers, QA reviewing components |
+| **Shared code** | Same components, same CSS Modules, same design tokens | Same components, same CSS Modules, same design tokens |
+
+Both use the same Vite build pipeline, the same TypeScript config, and the same component source files. The difference is context: the app wires components into pages with routing and state, while Storybook renders each component independently with controls and documentation.
+
+---
+
+## Atomic Design: Why This Folder Structure?
+
+Components are organized into four levels following [atomic design](https://bradfrost.com/blog/post/atomic-web-design/) principles:
+
+```
+src/components/
+  atoms/        -> Smallest building blocks (Button, Input, Badge, Avatar, Toggle)
+  molecules/    -> Combine atoms into patterns (Card, Alert, Tooltip, SearchBar)
+  organisms/    -> Complex sections from atoms + molecules (Navbar, Sidebar, DataTable, Form)
+  pages/        -> Full screens composed from all levels (LoginPage, Dashboard)
+```
+
+**Why this matters for Storybook:**
+
+- The `title` in each story meta mirrors this hierarchy (`'Atoms/Button'`, `'Molecules/Card'`, etc.), so the Storybook sidebar mirrors the code structure.
+- During a demo, you can walk the sidebar top-to-bottom: start with a single Button, show how it composes into a Card, then into a Navbar, and finally into a full Dashboard. The composition is visible at every level.
+- It establishes a shared vocabulary between design and engineering: when a designer says "atom," everyone knows what scope that means.
+
+**Composition in practice:**
+
+| Component | Composes |
+|-----------|----------|
+| Alert | Its own markup (icon + text + dismiss button) |
+| SearchBar | Its own markup (icon + input + clear button) |
+| Form | `Input` (atom) + `Button` (atom) |
+| Navbar | `Avatar` (atom) + nav links |
+| Dashboard | `Navbar` (organism) + `Sidebar` (organism) + `Card` (molecule) + `DataTable` (organism) + `SearchBar` (molecule) + `Badge` (atom) |
+
+---
+
+## `.storybook/main.ts` -- The Entry Point
 
 `main.ts` tells Storybook **what** to load and **how** to build.
 
@@ -52,14 +105,14 @@ Key decisions:
 
 | Setting | What it does |
 |---------|-------------|
-| `stories` glob | Recursively finds every `*.stories.ts(x)` file under `src/`. Adding a new story file is all you need — no manual registration. |
+| `stories` glob | Recursively finds every `*.stories.ts(x)` file under `src/`. Adding a new story file is all you need -- no manual registration. |
 | `@storybook/react-vite` | Reuses the project's Vite config so aliases, CSS Modules, and plugins work identically in Storybook and the app. |
 | `react-docgen-typescript` | Parses TypeScript interfaces (e.g. `ButtonProps`) to auto-generate the Controls table in the docs. |
 | Addons | Each addon adds a panel tab. `addon-essentials` bundles Controls, Actions, Viewport, Backgrounds, and Docs. |
 
 ---
 
-## `.storybook/preview.ts` — Global Rendering Config
+## `.storybook/preview.ts` -- Global Rendering Config
 
 `preview.ts` controls **how** every story renders. It runs in the preview iframe, not the Storybook manager.
 
@@ -95,9 +148,9 @@ Key decisions:
 
 ---
 
-## `.storybook/theme.ts` — UI Branding
+## `.storybook/theme.ts` -- UI Branding
 
-`theme.ts` customizes Storybook's **own** chrome (sidebar, toolbar, panels) — not the component preview.
+`theme.ts` customizes Storybook's **own** chrome (sidebar, toolbar, panels) -- not the component preview.
 
 ```typescript
 // .storybook/theme.ts
@@ -107,7 +160,7 @@ export default create({
   base: 'light',
   brandTitle: 'Design System',          // Text in the top-left corner
   brandUrl: '/',
-  colorPrimary: '#6366f1',              // Indigo — matches our design tokens
+  colorPrimary: '#6366f1',              // Indigo -- matches our design tokens
   colorSecondary: '#6366f1',
   appBg: '#f8fafc',                     // Sidebar background (neutral-50)
   appContentBg: '#ffffff',              // Canvas background
@@ -121,7 +174,7 @@ The theme is imported in `preview.ts` to style the Docs pages, and could also be
 
 ---
 
-## Design Tokens — The Shared Language
+## Design Tokens -- The Shared Language
 
 `src/tokens/design-tokens.css` defines all visual decisions as CSS custom properties on `:root`:
 
@@ -162,103 +215,13 @@ Because `preview.ts` imports the tokens globally, every Storybook story sees the
 
 ---
 
-## Anatomy of a Story File
-
-Every component has a co-located `*.stories.tsx` file. Here's the pattern, annotated:
-
-```typescript
-// Button.stories.tsx
-import type { Meta, StoryObj } from '@storybook/react'
-import { Button } from './Button'
-
-// 1. META — describes the component to Storybook
-const meta: Meta<typeof Button> = {
-  title: 'Atoms/Button',               // Sidebar hierarchy: "Atoms > Button"
-  component: Button,                    // Links to the component for prop extraction
-  argTypes: {                           // Configures the Controls panel
-    variant: {
-      control: 'select',
-      options: ['primary', 'secondary', 'outline', 'ghost', 'danger'],
-    },
-    onClick: { action: 'clicked' },     // Logs events in the Actions panel
-  },
-}
-export default meta
-
-type Story = StoryObj<typeof Button>
-
-// 2. STORIES — each export is one story
-export const Default: Story = {
-  args: { children: 'Button' },         // Default props for this story
-}
-
-export const Variants: Story = {
-  render: () => (                        // Custom render to show multiple at once
-    <div style={{ display: 'flex', gap: 'var(--space-4)' }}>
-      <Button variant="primary">Primary</Button>
-      <Button variant="secondary">Secondary</Button>
-    </div>
-  ),
-}
-```
-
-### Key concepts
-
-| Concept | Purpose |
-|---------|---------|
-| `title` | Determines the sidebar position. Slashes create nesting: `'Atoms/Button'` puts Button under the Atoms group. |
-| `component` | Tells Storybook which component to extract props from for the Controls table and Docs page. |
-| `args` | Default prop values for a story. Users can change them live via the Controls panel. |
-| `argTypes` | Customizes how Controls renders each prop (select dropdown, boolean toggle, color picker, etc.). |
-| `action` | Logs function-prop calls (like `onClick`) in the Actions panel so you can verify events fire. |
-| `render` | Optional custom render function. Use it when a single args object isn't enough (e.g. showing multiple variants side by side). |
-| `parameters` | Per-story config. Common: `layout: 'fullscreen'` for pages, `viewport: { defaultViewport: 'mobile1' }` for responsive stories. |
-| `decorators` | Wrapper functions that add context around a story (e.g. a max-width container, theme provider, or router). |
-
----
-
-## Interaction Testing with Play Functions
-
-Stories can include a `play` function that simulates user interactions. These run automatically when the story loads and show results in the **Interactions** panel.
-
-```typescript
-// Alert.stories.tsx — Dismissible story
-import { within, userEvent, expect } from '@storybook/test'
-
-export const Dismissible: Story = {
-  args: {
-    variant: 'warning',
-    title: 'Heads up',
-    message: 'This alert can be dismissed.',
-    dismissible: true,
-  },
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement)
-
-    // Assert the dismiss button exists
-    const dismissButton = canvas.getByRole('button', { name: /dismiss/i })
-    await expect(dismissButton).toBeInTheDocument()
-
-    // Click it
-    await userEvent.click(dismissButton)
-
-    // Assert the alert is gone
-    await expect(canvas.queryByRole('alert')).not.toBeInTheDocument()
-  },
-}
-```
-
-Play functions use the same Testing Library queries (`getByRole`, `getByLabelText`) and Jest-style assertions (`expect`) that you'd use in unit tests. The difference is they run inside Storybook's canvas, so you can see each step visually.
-
----
-
 ## Sidebar Hierarchy
 
 The `title` in each meta determines the Storybook sidebar tree:
 
 ```
-Atoms/          ← group
-  Avatar        ← component (from title: 'Atoms/Avatar')
+Atoms/          <- group
+  Avatar        <- component (from title: 'Atoms/Avatar')
   Badge
   Button
   Input
@@ -278,7 +241,7 @@ Pages/
   LoginPage
 ```
 
-This follows **atomic design** — the same hierarchy used in the `src/components/` folder structure, making the mapping between code and Storybook navigation obvious.
+This follows **atomic design** -- the same hierarchy used in the `src/components/` folder structure, making the mapping between code and Storybook navigation obvious.
 
 ---
 
@@ -287,9 +250,9 @@ This follows **atomic design** — the same hierarchy used in the `src/component
 Parameters cascade. A value set in `preview.ts` applies globally, but a story can override it:
 
 ```
-preview.ts          →  layout: 'centered'       (global default)
-  Navbar meta       →  layout: 'fullscreen'      (overrides for all Navbar stories)
-    Navbar/Mobile   →  viewport: 'mobile1'        (adds viewport for this one story)
+preview.ts          ->  layout: 'centered'       (global default)
+  Navbar meta       ->  layout: 'fullscreen'      (overrides for all Navbar stories)
+    Navbar/Mobile   ->  viewport: 'mobile1'        (adds viewport for this one story)
 ```
 
 The most specific value wins. This lets you set sensible defaults once and only override where needed.
@@ -299,26 +262,26 @@ The most specific value wins. This lets you set sensible defaults once and only 
 ## Data Flow Diagram
 
 ```
-┌──────────────┐     discovers     ┌─────────────────────┐
-│  main.ts     │ ────────────────► │  *.stories.tsx files │
-│  (config)    │                   │  (per component)     │
-└──────┬───────┘                   └──────────┬──────────┘
-       │                                      │
-       │ loads addons                         │ exports meta + stories
-       ▼                                      ▼
-┌──────────────┐                   ┌─────────────────────┐
-│  Addons      │                   │  preview.ts         │
-│  Controls    │◄──────────────────│  (global styles,    │
-│  Actions     │  applies global   │   decorators,       │
-│  A11y        │  parameters to    │   parameters)       │
-│  Viewport    │  every story      └──────────┬──────────┘
-│  Interactions│                              │
-└──────────────┘                              │ imports
-                                              ▼
-                                   ┌─────────────────────┐
-                                   │  design-tokens.css  │
-                                   │  index.css          │
-                                   └─────────────────────┘
++----------------+     discovers     +-----------------------+
+|  main.ts       | ----------------> |  *.stories.tsx files   |
+|  (config)      |                   |  (per component)       |
++-------+--------+                   +-----------+-----------+
+        |                                        |
+        | loads addons                          | exports meta + stories
+        v                                        v
++----------------+                   +-----------------------+
+|  Addons        |                   |  preview.ts           |
+|  Controls      |<------------------|  (global styles,      |
+|  Actions       |  applies global   |   decorators,         |
+|  A11y          |  parameters to    |   parameters)         |
+|  Viewport      |  every story      +-----------+-----------+
+|  Interactions  |                               |
++----------------+                               | imports
+                                                 v
+                                    +-----------------------+
+                                    |  design-tokens.css    |
+                                    |  index.css            |
+                                    +-----------------------+
 ```
 
 ---
@@ -333,7 +296,7 @@ The most specific value wins. This lets you set sensible defaults once and only 
      Chip.stories.tsx
    ```
 
-2. Write the story file following the pattern:
+2. Write the story file following the pattern (see [Writing Stories](./writing-stories.md) for details):
    ```typescript
    const meta: Meta<typeof Chip> = {
      title: 'Atoms/Chip',       // sidebar placement
