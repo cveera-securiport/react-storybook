@@ -1,0 +1,133 @@
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  width: 260px;
+  height: 100vh;
+  background-color: var(--color-white);
+  border-right: 1px solid var(--color-neutral-200);
+  font-family: var(--font-sans);
+  transition: width var(--transition-normal);
+  overflow: hidden;
+}
+
+.sidebar.collapsed {
+  width: 64px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4) var(--space-4);
+  border-bottom: 1px solid var(--color-neutral-100);
+}
+
+.title {
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--color-neutral-800);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.collapseBtn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--color-neutral-400);
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  transition:
+    background-color var(--transition-fast),
+    color var(--transition-fast);
+  display: flex;
+}
+
+.collapseBtn:hover {
+  background-color: var(--color-neutral-100);
+  color: var(--color-neutral-700);
+}
+
+.menu {
+  flex: 1;
+  padding: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  overflow-y: auto;
+}
+
+.menuItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--color-neutral-600);
+  cursor: pointer;
+  transition:
+    background-color var(--transition-fast),
+    color var(--transition-fast);
+  border: none;
+  background: transparent;
+  text-align: left;
+  width: 100%;
+  white-space: nowrap;
+}
+
+.menuItem:hover {
+  background-color: var(--color-neutral-50);
+  color: var(--color-neutral-900);
+}
+
+.menuItem.active {
+  background-color: var(--color-primary-50);
+  color: var(--color-primary-600);
+}
+
+.menuIcon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.menuLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar.collapsed .menuLabel {
+  display: none;
+}
+
+.sidebar.collapsed .header .title {
+  display: none;
+}
+
+.section {
+  margin-top: var(--space-4);
+}
+
+.sectionTitle {
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  color: var(--color-neutral-400);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: var(--space-1) var(--space-3);
+  margin-bottom: var(--space-1);
+}
+
+.sidebar.collapsed .sectionTitle {
+  display: none;
+}
+
+.footer {
+  padding: var(--space-4);
+  border-top: 1px solid var(--color-neutral-100);
+}
