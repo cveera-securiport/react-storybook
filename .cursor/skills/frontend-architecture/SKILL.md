@@ -141,34 +141,52 @@ In an Nx monorepo this is enforced via `@nx/enforce-module-boundaries` (see Sect
 
 ### Co-located file pattern
 
-Every component is a folder with three files:
+Every component is a folder with at minimum two files:
 
 ```
 Button/
   Button.tsx            # Component implementation
-  Button.module.css     # Scoped styles consuming design tokens
   Button.stories.tsx    # Storybook stories (CSF3)
 ```
 
-Optional additions for complex components:
+Add these as needed:
+- `Button.module.css` -- Scoped styles consuming design tokens. **Not needed for MUI wrapper components** (Section 5) since styling flows through MUI's theme and `sx` prop. Use CSS Modules only for custom non-MUI components (layouts, page shells, bespoke UI).
 - `Button.test.tsx` -- Vitest unit tests
 - `Button.types.ts` -- Shared type definitions (when types are reused across files)
-- `index.ts` -- Barrel re-export
 
-### Barrel exports
+### Imports: direct paths, no barrel files
 
-Each level has an `index.ts` that re-exports all public components:
+**Do not create barrel `index.ts` files** that re-export all components from a level. Barrel files cause:
+- Failed tree-shaking -- bundlers pull in every re-exported module even when only one is used.
+- Slower builds and test runs -- Vitest/Jest load all exports from the barrel regardless of what the test needs.
+- Hidden circular dependencies between co-located components.
+- Broken code splitting -- route-level splits pull in unrelated components through the barrel chain.
+
+Instead, import components directly from their source file:
 
 ```ts
-// libs/ibc/ui/src/index.ts
-export { Button } from './atoms/Button/Button'
-export { Input } from './atoms/Input/Input'
-export { Badge } from './atoms/Badge/Badge'
-export { Avatar } from './atoms/Avatar/Avatar'
-export { Toggle } from './atoms/Toggle/Toggle'
-export { Card } from './molecules/Card/Card'
-export { Alert } from './molecules/Alert/Alert'
+// Good: direct import
+import { Button } from '@ibc/ui/atoms/Button/Button'
+import { Card } from '@ibc/ui/molecules/Card/Card'
+
+// Bad: barrel import pulls in everything
+import { Button, Card } from '@ibc/ui'
 ```
+
+Configure each library's `package.json` `exports` field to expose granular entry points:
+
+```json
+{
+  "exports": {
+    "./atoms/Button": "./src/atoms/Button/Button.tsx",
+    "./atoms/Input": "./src/atoms/Input/Input.tsx",
+    "./molecules/Card": "./src/molecules/Card/Card.tsx",
+    "./molecules/Alert": "./src/molecules/Alert/Alert.tsx"
+  }
+}
+```
+
+This gives consumers clean import paths (`@ibc/ui/atoms/Button`) without the tree-shaking penalty of a single barrel file.
 
 ---
 
@@ -233,22 +251,29 @@ Card.Footer = function CardFooter({ children }: { children: React.ReactNode }) {
 }
 ```
 
-### Ref forwarding
+### Ref as a prop (React 19)
 
-Always forward refs on atoms and molecules for composability:
+In React 19, `ref` is a regular prop -- **do not use `forwardRef`** (it is deprecated). Accept `ref` directly in the props interface:
 
 ```tsx
-const Input = React.forwardRef<HTMLInputElement, InputProps>(
-  ({ label, error, ...props }, ref) => (
+interface InputProps {
+  label?: string
+  error?: string
+  ref?: React.Ref<HTMLInputElement>
+}
+
+function Input({ label, error, ref, ...props }: InputProps) {
+  return (
     <div className={styles.wrapper}>
       {label && <label className={styles.label}>{label}</label>}
       <input ref={ref} className={styles.input} {...props} />
       {error && <span className={styles.error}>{error}</span>}
     </div>
   )
-)
-Input.displayName = 'Input'
+}
 ```
+
+All atoms and molecules should accept `ref` for composability. No `forwardRef` wrapper, no `displayName` workaround.
 
 ### React 19 patterns
 
@@ -278,20 +303,20 @@ function TodoItem({ todo, updateAction }: Props) {
 }
 ```
 
-**`useActionState`:** Declarative async form handling:
+**`useActionState`:** React 19 primitive for declarative async form handling. For most forms, prefer TanStack Form (Section 8) which provides richer validation, field-level errors, and TanStack Query integration. Use `useActionState` only for trivial forms (e.g., a single search input or newsletter signup) that don't justify a full form library:
 
 ```tsx
-async function submitForm(_prev: State, formData: FormData): Promise<State> {
-  const result = await api.createUser(Object.fromEntries(formData))
+async function subscribe(_prev: State, formData: FormData): Promise<State> {
+  const result = await api.subscribe(formData.get('email') as string)
   return result.ok ? { status: 'success' } : { status: 'error', message: result.error }
 }
 
-function SignupForm() {
-  const [state, action, isPending] = useActionState(submitForm, { status: 'idle' })
+function NewsletterForm() {
+  const [state, action, isPending] = useActionState(subscribe, { status: 'idle' })
   return (
     <form action={action}>
-      <Input name="email" />
-      <Button type="submit" disabled={isPending}>Sign Up</Button>
+      <Input name="email" placeholder="you@example.com" />
+      <Button type="submit" disabled={isPending}>Subscribe</Button>
       {state.status === 'error' && <Alert variant="danger">{state.message}</Alert>}
     </form>
   )
@@ -515,23 +540,17 @@ await sd.buildAllPlatforms()
 
 ### Theming (light/dark mode)
 
-Use token aliasing to support themes:
+MUI's `colorSchemes` (Section 5) is the primary dark mode mechanism. With `cssVariables: true`, MUI generates `--mui-palette-*` CSS variables that update automatically when the color scheme changes. Define semantic aliases that reference MUI's generated variables so there is a single source of truth:
 
 ```css
 :root {
-  --surface-primary: var(--color-white);
-  --text-primary: var(--color-neutral-900);
-  --border-default: var(--color-neutral-200);
-}
-
-[data-theme='dark'] {
-  --surface-primary: var(--color-neutral-900);
-  --text-primary: var(--color-neutral-50);
-  --border-default: var(--color-neutral-700);
+  --surface-primary: var(--mui-palette-background-default);
+  --text-primary: var(--mui-palette-text-primary);
+  --border-default: var(--mui-palette-divider);
 }
 ```
 
-Components reference only semantic tokens (`--surface-primary`, `--text-primary`), never raw palette values.
+These aliases update automatically when MUI switches between light and dark mode -- no separate `[data-theme='dark']` block needed. Components reference only semantic tokens (`--surface-primary`, `--text-primary`), never raw palette values.
 
 ### Rules
 
@@ -2299,7 +2318,7 @@ export default defineConfig({
 ### Rules
 
 - Lazy-load all routes and heavy components (charts, rich text editors, modals).
-- Avoid barrel imports that pull in entire libraries (use `import { specific } from 'lib/specific'`).
+- Never use barrel `index.ts` files -- import directly from source paths (see Section 1).
 - Measure with Lighthouse CI in your pipeline; fail the build if LCP > 3s.
 - Use `loading="lazy"` on images below the fold.
 - Prefer CSS animations over JS-driven animations for transform/opacity.
@@ -2500,7 +2519,7 @@ async function fetchUser(id: string): Promise<User> {
 Use a feature flag service (LaunchDarkly, Unleash, or Flagsmith) to decouple deployment from release:
 
 ```tsx
-import { useFlag } from '@/libs/feature-flags'
+import { useFlag } from '@shared/feature-flags'
 
 function Dashboard() {
   const showNewChart = useFlag('dashboard-new-chart')
