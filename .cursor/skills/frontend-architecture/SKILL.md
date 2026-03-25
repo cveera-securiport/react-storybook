@@ -14,7 +14,7 @@ Mobile-first, token-driven, component-scoped.
 
 ### Breakpoint tokens
 
-Define breakpoints as CSS custom properties in `src/tokens/design-tokens.css`:
+Define breakpoints as CSS custom properties in `libs/shared/tokens/design-tokens.css`:
 
 ```css
 :root {
@@ -106,11 +106,22 @@ Components are categorized by complexity using the Atomic Design hierarchy.
 ### Folder structure
 
 ```
-src/components/
+libs/ibc/ui/                    # Shared design system (scope:shared)
   atoms/        # Button, Input, Badge, Avatar, Toggle
   molecules/    # Card, Alert, Tooltip, SearchBar
   organisms/    # Navbar, Sidebar, DataTable, Form
-  pages/        # LoginPage, Dashboard
+
+libs/shell/ui/                  # Shell-specific components (scope:shell)
+  organisms/    # ShellNavbar, ShellSidebar
+
+libs/agent/ui/                  # Agent-specific components (scope:agent)
+  organisms/    # AgentToolbar, AgentPanel
+
+apps/shell/src/pages/           # Shell app pages (in the app, not libs)
+  Dashboard, Settings
+
+apps/agent/src/pages/           # Agent app pages
+  Workspace
 ```
 
 ### Import direction (strictly enforced)
@@ -149,12 +160,14 @@ Optional additions for complex components:
 Each level has an `index.ts` that re-exports all public components:
 
 ```ts
-// src/components/atoms/index.ts
-export { Button } from './Button/Button'
-export { Input } from './Input/Input'
-export { Badge } from './Badge/Badge'
-export { Avatar } from './Avatar/Avatar'
-export { Toggle } from './Toggle/Toggle'
+// libs/ibc/ui/src/index.ts
+export { Button } from './atoms/Button/Button'
+export { Input } from './atoms/Input/Input'
+export { Badge } from './atoms/Badge/Badge'
+export { Avatar } from './atoms/Avatar/Avatar'
+export { Toggle } from './atoms/Toggle/Toggle'
+export { Card } from './molecules/Card/Card'
+export { Alert } from './molecules/Alert/Alert'
 ```
 
 ---
@@ -289,31 +302,44 @@ function SignupForm() {
 
 ## 3. Nx Monorepo Architecture
 
-### Workspace layout
+### Workspace layout (scope-first)
+
+Organize libraries by **scope first** (domain/team ownership), then by **type** within each scope. This keeps everything for a given domain co-located and maps naturally to team boundaries.
 
 ```
 apps/
-  web/                    # Main React application
-  storybook-host/         # Shared Storybook (optional, can be per-lib)
+  shell/                          # Shell application entry point + routing
+  agent/                          # Agent application entry point + routing
 
 libs/
-  ui/                     # Shared UI components (atomic design)
-  features/
-    auth/                 # Auth feature (login, signup, session)
-    dashboard/            # Dashboard feature
-  data-access/
-    api-client/           # HTTP client, OpenAPI generated types
-    stores/               # Zustand stores
-  tokens/                 # Design tokens (CSS, Style Dictionary)
-  util/
-    formatting/           # Date, currency, string utilities
-    hooks/                # Shared React hooks
-    testing/              # Test utilities, fixtures, mocks
+  ibc/                            # scope:shared -- shared design system
+    ui/                           # type:ui     -- Button, Input, Card, DataTable, etc.
+
+  shell/                          # scope:shell -- everything shell-specific
+    ui/                           # type:ui      -- shell-specific components
+    feature-dashboard/            # type:feature -- dashboard page + logic
+    feature-settings/             # type:feature -- settings page + logic
+
+  agent/                          # scope:agent -- everything agent-specific
+    ui/                           # type:ui      -- agent-specific components
+    feature-workspace/            # type:feature -- workspace page + logic
+
+  shared/                         # scope:shared -- non-UI shared code
+    data-access/                  # type:data-access -- API client, Zustand stores
+    tokens/                       # type:util    -- design tokens + MUI theme
+    util/                         # type:util    -- hooks, formatters, helpers
+    testing/                      # type:util    -- test utilities, fixtures, mocks
 ```
+
+**Why scope-first:**
+- One folder per domain -- easy to find everything related to "shell" or "agent".
+- Maps to team ownership (the shell team owns `libs/shell/`).
+- Libraries evolve within their scope without folder moves. If `shell/ui` later becomes shared, change its tag to `scope:shared` and move it to `libs/ibc/` or `libs/shared/`.
+- `apps/` contains only deployable entry points (routing, app config). All components, features, stores, and utilities live in `libs/`.
 
 ### Library categorization with tags
 
-Every project in `project.json` gets two tags:
+Every project in `project.json` gets two tags -- **type** (what it is) and **scope** (who owns it):
 
 ```json
 {
@@ -322,11 +348,21 @@ Every project in `project.json` gets two tags:
 ```
 
 **Type tags:** `type:app`, `type:feature`, `type:ui`, `type:data-access`, `type:util`
-**Scope tags:** `scope:shared`, `scope:auth`, `scope:dashboard`, etc.
+**Scope tags:** `scope:shared`, `scope:shell`, `scope:agent`
+
+| Library | Tags |
+|---------|------|
+| `libs/ibc/ui` | `type:ui, scope:shared` |
+| `libs/shell/ui` | `type:ui, scope:shell` |
+| `libs/shell/feature-dashboard` | `type:feature, scope:shell` |
+| `libs/agent/ui` | `type:ui, scope:agent` |
+| `libs/agent/feature-workspace` | `type:feature, scope:agent` |
+| `libs/shared/data-access` | `type:data-access, scope:shared` |
+| `libs/shared/tokens` | `type:util, scope:shared` |
 
 ### Module boundary enforcement
 
-Configure `@nx/enforce-module-boundaries` in `eslint.config.mjs`:
+Configure `@nx/enforce-module-boundaries` in `eslint.config.mjs`. Constraints enforce both the **type hierarchy** (features can't import from apps) and **scope isolation** (shell can't import agent code):
 
 ```ts
 import nxPlugin from '@nx/eslint-plugin'
@@ -337,16 +373,39 @@ export default [
     rules: {
       '@nx/enforce-module-boundaries': ['error', {
         depConstraints: [
+          // Type hierarchy
           { sourceTag: 'type:app',         onlyDependOnLibsWithTags: ['type:feature', 'type:ui', 'type:data-access', 'type:util'] },
           { sourceTag: 'type:feature',     onlyDependOnLibsWithTags: ['type:ui', 'type:data-access', 'type:util'] },
           { sourceTag: 'type:ui',          onlyDependOnLibsWithTags: ['type:ui', 'type:util'] },
           { sourceTag: 'type:data-access', onlyDependOnLibsWithTags: ['type:data-access', 'type:util'] },
           { sourceTag: 'type:util',        onlyDependOnLibsWithTags: ['type:util'] },
+
+          // Scope isolation
+          { sourceTag: 'scope:shell', onlyDependOnLibsWithTags: ['scope:shell', 'scope:shared'] },
+          { sourceTag: 'scope:agent', onlyDependOnLibsWithTags: ['scope:agent', 'scope:shared'] },
+          { sourceTag: 'scope:shared', onlyDependOnLibsWithTags: ['scope:shared'] },
         ],
       }],
     },
   },
 ]
+```
+
+This guarantees:
+- `shell/feature-dashboard` can import `shell/ui` and `ibc/ui`, but never `agent/ui`.
+- `ibc/ui` (scope:shared) can only depend on other shared libraries -- never on shell or agent code.
+- The type hierarchy is enforced independently: features never import from other features, UI never imports from features, etc.
+
+### Dependency flow
+
+```
+apps/shell  →  shell/feature-dashboard  →  shell/ui  →  ibc/ui
+                                        →  shared/data-access
+                                        →  shared/tokens
+
+apps/agent  →  agent/feature-workspace  →  agent/ui  →  ibc/ui
+                                        →  shared/data-access
+                                        →  shared/tokens
 ```
 
 ### Affected commands
@@ -371,11 +430,12 @@ In CI, Nx Cloud replays cached results from other developers and CI runs, reduci
 
 ### Generators
 
-Create custom generators for consistent scaffolding:
+Scaffold libraries into the scope-first structure:
 
 ```bash
-nx g @nx/react:library libs/features/checkout --tags="type:feature,scope:checkout"
-nx g @nx/react:component Button --project=ui --directory=atoms
+nx g @nx/react:library libs/shell/feature-checkout --tags="type:feature,scope:shell"
+nx g @nx/react:library libs/ibc/ui --tags="type:ui,scope:shared"
+nx g @nx/react:component Button --project=ibc-ui --directory=atoms
 ```
 
 ### Module Federation
@@ -383,7 +443,7 @@ nx g @nx/react:component Button --project=ui --directory=atoms
 For micro-frontend scaling, Nx has first-class Module Federation support:
 
 ```bash
-nx g @nx/react:host apps/shell --remotes=checkout,catalog
+nx g @nx/react:host apps/shell --remotes=agent
 ```
 
 Each remote builds and deploys independently. The shell loads remotes at runtime. Use `--devRemotes` during local development to only serve remotes you are actively changing.
@@ -441,7 +501,7 @@ const sd = new StyleDictionary({
   platforms: {
     css: {
       transformGroup: 'css',
-      buildPath: 'src/tokens/',
+      buildPath: 'libs/shared/tokens/src/',
       files: [{
         destination: 'design-tokens.css',
         format: 'css/variables',
@@ -478,7 +538,7 @@ Components reference only semantic tokens (`--surface-primary`, `--text-primary`
 - All visual values (colors, spacing, radii, shadows, typography) come from tokens.
 - Never use inline styles for anything a token covers.
 - Components use CSS Modules (`.module.css`) that consume tokens via `var(--token-name)`.
-- The token file is imported globally in `.storybook/preview.ts` so every story has access.
+- The token file is imported globally in each Storybook's `preview.ts` so every story has access.
 
 ---
 
@@ -503,7 +563,7 @@ Do **not** use CSS Modules to style MUI components -- MUI's styling system is ti
 Bridge your design tokens into MUI's theme via `createTheme` with `cssVariables: true`:
 
 ```ts
-// libs/tokens/mui-theme.ts
+// libs/shared/tokens/src/mui-theme.ts
 import { createTheme } from '@mui/material/styles'
 
 export const theme = createTheme({
@@ -569,7 +629,7 @@ Wrap the app at the root:
 
 ```tsx
 import { ThemeProvider, CssBaseline } from '@mui/material'
-import { theme } from '@/libs/tokens/mui-theme'
+import { theme } from '@ibc/tokens'
 
 function App() {
   return (
@@ -704,7 +764,7 @@ npm install @pigment-css/vite-plugin
 ```ts
 // vite.config.ts
 import { pigment } from '@pigment-css/vite-plugin'
-import { theme } from './libs/tokens/mui-theme'
+import { theme } from '@ibc/tokens'
 
 export default defineConfig({
   plugins: [
@@ -728,7 +788,7 @@ npm install -D @storybook/addon-themes @fontsource/roboto @fontsource/material-i
 // .storybook/preview.ts
 import { withThemeFromJSXProvider } from '@storybook/addon-themes'
 import { ThemeProvider, CssBaseline } from '@mui/material'
-import { theme } from '../libs/tokens/mui-theme'
+import { theme } from '@ibc/tokens'
 
 export const decorators = [
   withThemeFromJSXProvider({
@@ -758,7 +818,7 @@ export const decorators = [
 Add custom tokens to the MUI theme with module augmentation:
 
 ```ts
-// libs/tokens/theme.d.ts
+// libs/shared/tokens/src/theme.d.ts
 import '@mui/material/styles'
 
 declare module '@mui/material/styles' {
@@ -936,7 +996,7 @@ Zustand handles **client state** (auth, UI preferences). TanStack Query handles 
 ### QueryClient configuration
 
 ```tsx
-// libs/data-access/query-client.ts
+// libs/shared/data-access/src/query-client.ts
 import { QueryClient } from '@tanstack/react-query'
 
 export const queryClient = new QueryClient({
@@ -972,7 +1032,7 @@ function App() {
 Structure keys as tuples with increasing specificity:
 
 ```ts
-// libs/data-access/query-keys.ts
+// libs/shared/data-access/src/query-keys.ts
 export const userKeys = {
   all:    ['users'] as const,
   lists:  () => [...userKeys.all, 'list'] as const,
@@ -993,7 +1053,7 @@ queryClient.invalidateQueries({ queryKey: userKeys.lists() })
 Encapsulate queries in reusable hooks:
 
 ```ts
-// libs/data-access/hooks/useUser.ts
+// libs/shared/data-access/src/hooks/useUser.ts
 import { useQuery } from '@tanstack/react-query'
 import { userKeys } from '../query-keys'
 import { fetchUser, type User } from '../api-client'
@@ -1098,7 +1158,7 @@ export function useInfiniteUsers(filters: UserFilters) {
 ### Rules
 
 - Never store fetched server data in Zustand -- let TanStack Query own the cache.
-- Every query hook lives in `libs/data-access/hooks/`.
+- Every query hook lives in `libs/shared/data-access/src/hooks/`.
 - Always use the query key factory (`userKeys`, `todoKeys`) -- never hand-write key arrays.
 - Set `staleTime` based on data freshness requirements (real-time data: 0, reference data: 5 min+).
 - Use `placeholderData: keepPreviousData` for paginated queries to avoid layout flicker.
@@ -1117,10 +1177,10 @@ npm install @tanstack/react-form @tanstack/zod-form-adapter zod
 
 ### Shared Zod schemas
 
-Define schemas once in `libs/data-access/schemas/` and reuse for both form validation and API response validation:
+Define schemas once in `libs/shared/data-access/src/schemas/` and reuse for both form validation and API response validation:
 
 ```ts
-// libs/data-access/schemas/user.ts
+// libs/shared/data-access/src/schemas/user.ts
 import { z } from 'zod'
 
 export const UserSchema = z.object({
@@ -1143,7 +1203,7 @@ export type UpdateUserInput = z.infer<typeof UpdateUserSchema>
 ```tsx
 import { useForm } from '@tanstack/react-form'
 import { zodValidator } from '@tanstack/zod-form-adapter'
-import { CreateUserSchema, type CreateUserInput } from '@/libs/data-access/schemas/user'
+import { CreateUserSchema, type CreateUserInput } from '@ibc/data-access/schemas/user'
 
 function CreateUserForm({ onSubmit }: { onSubmit: (data: CreateUserInput) => void }) {
   const form = useForm({
@@ -1312,7 +1372,7 @@ Use `form.Subscribe` to reactively show/hide fields based on other values:
 - Use the Zod adapter (`@tanstack/zod-form-adapter`) -- never write raw validation functions when a schema exists.
 - Use `form.Subscribe` to observe form state reactively and avoid unnecessary re-renders.
 - Always show field-level errors immediately below the input via `field.state.meta.errors`.
-- Place schemas in `libs/data-access/schemas/` for cross-library reuse.
+- Place schemas in `libs/shared/data-access/src/schemas/` for cross-library reuse.
 - Use `onChangeAsyncDebounceMs` for expensive validations (uniqueness checks, server-side validation).
 
 ---
@@ -1337,12 +1397,12 @@ export default defineConfig({
   api: {
     input: './openapi.json',
     output: {
-      target: 'libs/data-access/api-client/generated.ts',
+      target: 'libs/shared/data-access/src/api-client/generated.ts',
       client: 'react-query',
       mode: 'tags-split',
       override: {
         mutator: {
-          path: 'libs/data-access/api-client/custom-fetch.ts',
+          path: 'libs/shared/data-access/src/api-client/custom-fetch.ts',
           name: 'customFetch',
         },
       },
@@ -1361,7 +1421,7 @@ This produces typed query hooks (`useGetUsers`, `useCreateUser`, etc.) with corr
 **Using `openapi-typescript` (lighter, types-only):**
 
 ```bash
-npx openapi-typescript ./openapi.json -o libs/data-access/api-client/schema.d.ts
+npx openapi-typescript ./openapi.json -o libs/shared/data-access/src/api-client/schema.d.ts
 ```
 
 Generates TypeScript types from the spec. You write the fetch calls manually but with full type safety.
@@ -1371,7 +1431,7 @@ Generates TypeScript types from the spec. You write the fetch calls manually but
 Centralize auth headers, base URL, and error handling:
 
 ```ts
-// libs/data-access/api-client/custom-fetch.ts
+// libs/shared/data-access/src/api-client/custom-fetch.ts
 export async function customFetch<T>(url: string, options?: RequestInit): Promise<T> {
   const token = useAppStore.getState().token
 
@@ -1539,7 +1599,7 @@ npm install react-i18next i18next i18next-browser-languagedetector i18next-http-
 ```
 
 ```ts
-// libs/util/i18n/i18n.ts
+// libs/shared/util/src/i18n/i18n.ts
 import i18n from 'i18next'
 import { initReactI18next } from 'react-i18next'
 import LanguageDetector from 'i18next-browser-languagedetector'
