@@ -58,3 +58,9 @@ This is working as intended. The A11y addon runs [axe-core](https://github.com/d
 - Missing form labels
 
 Fix them in the component -- the violations will disappear from every story that uses it.
+
+---
+
+### Local Keycloak (Docker) for auth development
+
+For running Keycloak in Docker, concepts (image vs container, ports), and a first-time realm/client checklist, see [docker-keycloak-local.md](./docker-keycloak-local.md).
