@@ -4,3 +4,8 @@ storybook-static
 *.local
 .DS_Store
 .env.keycloak
+
+
+
+.nx/cache
+.nx/workspace-data

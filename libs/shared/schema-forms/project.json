@@ -1,0 +1,23 @@
+{
+  "name": "schema-forms",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/shared/schema-forms/src",
+  "projectType": "library",
+  "tags": ["type:ui", "scope:shared"],
+  "targets": {
+    "build": {
+      "executor": "@nx/vite:build",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/libs/shared/schema-forms"
+      }
+    },
+    "test": {
+      "executor": "@nx/vite:test",
+      "outputs": ["{workspaceRoot}/coverage/libs/shared/schema-forms"],
+      "options": {
+        "reportsDirectory": "../../../coverage/libs/shared/schema-forms"
+      }
+    }
+  }
+}
