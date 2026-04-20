@@ -1,6 +1,6 @@
 # Schema-Driven UI Framework -- Implementation Plan
 
-A production-ready plan for a **form-library-agnostic, schema-driven UI framework** that renders dynamic forms from Zod schemas with pluggable form engines (TanStack Form primary, React Hook Form secondary), built on **React 19 + MUI v9** and aligned with the enterprise frontend architecture defined in `.cursor/skills/frontend-architecture/SKILL.md`. Downlevel v6/v7 + React 18 consumers are supported via peer-dep ranges (see Appendix C).
+A production-ready plan for a **form-library-agnostic, schema-driven UI framework** that renders dynamic forms from Zod schemas with pluggable form engines (TanStack Form primary, React Hook Form secondary), built on **React 18 + MUI v7** in an **Nx monorepo with pnpm**, aligned with the enterprise frontend architecture. Design tokens live in `libs/shared/tokens/` as CSS custom properties and are bridged into the MUI theme. Storybook 10 is the component development environment.
 
 This document is the blueprint. It is intentionally detailed enough that an engineer or cloud agent can execute it without re-deriving architecture decisions.
 
@@ -24,6 +24,37 @@ This document is the blueprint. It is intentionally detailed enough that an engi
 - Server-side rendering of forms.
 - Multi-step wizard orchestration (leave hooks for it; do not build it).
 - Non-Zod schema adapters (e.g. Yup, Valibot). Design keeps the door open but v1 ships Zod only.
+
+### v1 Scope Contract
+
+Appendix A.1 trims scope informally. This section makes it binding. Any feature not in the **MUST** list requires a design review before landing on `main`.
+
+**v1 MUST ship:**
+
+| Capability | Notes |
+|---|---|
+| Flat object forms | `z.object({ … })` with all primitive field types |
+| Per-field + whole-form Zod validation | Sync only; errors surfaced inline via `FieldBinding.error` gated by `touched` |
+| Default auto-layout + explicit `LayoutNode` | One row per field unless author overrides |
+| Basic arrays | `z.array(z.object(…))` — push, insert, remove, move with stable keys |
+| Field registry + `custom` layout extensibility | `defaultRegistry` with 11 field types; `LayoutRegistry` for `kind: 'custom'` |
+| Single engine (TanStack Form) | `FormEngine` interface exists as the seam; only the TanStack adapter is implemented |
+| Storybook stories for every component | `Default` + at least one error/edge-case variant per field and form story |
+| Dev-mode warnings | Fallback fields, unregistered layout components, unused fields in custom layouts |
+
+**v1 MUST NOT ship (deferred to v1.1+):**
+
+| Feature | Reason |
+|---|---|
+| Conditional rendering (`dependsOn` + `visibleWhen`) | Requires dependency graph; runtime guard is enough for v1 |
+| Async validation | Wiring exists (`isValidating` in `FieldBinding`) but no adapter code; Phase 13 |
+| RHF adapter / engine switching | ~40% of complexity; defer until a real consumer asks |
+| `FormHandle.capabilities` probe | Dead code with one engine |
+| Dynamic `import()` code-splitting of engines | Nothing to split with one engine |
+| Static cycle detection in `dependsOn` graph | Runtime recursion guard suffices |
+| Multi-step wizard orchestration | Hooks only; no built-in stepper |
+
+If a PR introduces code for a "MUST NOT" feature, it must be behind a feature flag and merged to a `next` branch, not `main`.
 
 ---
 
@@ -111,6 +142,7 @@ src/
       RadioGroupField/RadioGroupField.tsx
       DateField/DateField.tsx
       TextareaField/TextareaField.tsx
+      FileUploadField/FileUploadField.tsx # file upload with drag-and-drop
       ObjectField/ObjectField.tsx         # nested objects
       ArrayField/ArrayField.tsx           # repeatable groups
 
@@ -207,7 +239,12 @@ type FieldMeta = {
 function ui<T extends z.ZodTypeAny>(schema: T, meta: FieldMeta): T
 ```
 
-`ui()` serializes meta as JSON into `schema.describe(...)` so it round-trips through `z.infer`, `.optional()`, `.nullable()`, and `.default()` without loss. `compile()` reads it back with a deserialize guard that rejects malformed metadata with a precise `CompileError`.
+`ui()` uses a **dual-storage** strategy:
+
+1. **Primary: `WeakMap` side-channel.** A module-scoped `WeakMap<z.ZodTypeAny, FieldMeta>` keyed by schema reference. This is the authoritative source -- it never conflicts with other Zod tooling (e.g. `zodToJsonSchema`, OpenAPI generators), is garbage-collected, and is easy to inspect during debugging.
+2. **Fallback: `.describe()` JSON envelope.** `ui()` also serializes meta into `schema.describe(JSON.stringify({ __ui: true, ...meta }))` so metadata survives Zod combinators (`.optional()`, `.nullable()`, `.default()`) that return new wrapper nodes not present in the WeakMap.
+
+`compile()` reads metadata via a `getMeta(schema)` helper that checks the WeakMap first, then falls back to parsing `.describe()`. Malformed `.describe()` envelopes are rejected with a precise `CompileError`.
 
 ### 4.3 Compilation (`compile.ts`)
 
@@ -242,6 +279,20 @@ Rules enforced during compile:
 - If no `label`, derive from the last segment of the field path (camel→Title Case).
 - If no `col`, default to `{ xs: 12 }` (full width mobile, stacks on all breakpoints until overridden).
 - Nested objects produce a sub-tree with `depth + 1`; a maximum depth of `5` is enforced, emitting a `CompileError` beyond that.
+
+**Internal structure.** In v1 (Phase 2), `compile()` is a single-pass walk that populates all five concerns (fields, layout, validators, defaults, order) in one traversal — the schema is small enough that separate passes add indirection without benefit. However, the walk produces an intermediate `SchemaNode[]` array (the "AST") that all downstream logic reads from, rather than reading from the Zod tree directly. This makes decomposition into explicit passes mechanical when Phase 13 adds `dependsOn` graph analysis, `asyncValidate` registry lookups, and conditional visibility — at that point `compile()` is refactored into:
+
+```
+compile(schema) → walkSchema(schema) → SchemaNode[]
+                → extractFields(nodes)
+                → buildLayout(nodes)
+                → buildValidators(nodes)
+                → extractDefaults(nodes)
+                → assembleDependencyGraph(nodes)   // Phase 13
+                → assembleSpec(…)
+```
+
+See Phase 13's entry gate for when this refactor is triggered.
 
 Compilation is memoized per schema reference so re-renders don't recompile.
 
@@ -283,12 +334,17 @@ export interface FieldBinding {
   onChange: (next: unknown) => void
   onBlur: () => void
   error?: string                              // first error for the field
+  touched: boolean                            // true after first blur; gates error display
+  dirty: boolean                              // true when value !== defaultValue
+  isValidating: boolean                       // true while an async validator is in flight
   name: string                                // dot-path, for `name` attr + testing
   ref?: React.Ref<HTMLElement>
 }
 ```
 
-The interface is intentionally minimal. Everything else (arrays, async validation, cross-field dependencies) is layered on top using `subscribe` plus engine-specific opt-in APIs exposed through a capability probe:
+`touched` and `dirty` are required from v1 — field components use `touched` to gate error display ("show errors only after interaction"), and `dirty` for visual indicators. `isValidating` defaults to `false` until Phase 13 wires async validators; including it now avoids retrofitting every field component later. `isDisabled` is intentionally omitted — disability is a rendering concern driven by `spec.meta.readOnly` / `spec.meta.hidden`, not an engine concern.
+
+Everything else (arrays, async validation, cross-field dependencies) is layered on top using `subscribe` plus engine-specific opt-in APIs exposed through a capability probe:
 
 ```ts
 interface FormHandle<TValues> {
@@ -299,13 +355,22 @@ interface FormHandle<TValues> {
   // Optional, guarded by capabilities.
   arrayOps?: {
     push: (path: string, value: unknown) => void
+    insert: (path: string, index: number, value: unknown) => void
     remove: (path: string, index: number) => void
     move: (path: string, from: number, to: number) => void
+    getKeys: (path: string) => string[]         // stable identity keys for React `key` prop
   }
 }
 ```
 
-Field components call `arrayOps` only after checking `capabilities.fieldArrays`. If an engine lacks a capability, the renderer falls back to an imperative pattern using `reset` with a re-computed value tree.
+**Array identity guarantees.** Every array item is assigned a stable, monotonically-increasing string key (e.g. `"__fk_0"`, `"__fk_1"`) when it enters the array — via `push`, `insert`, or initial `defaultValues` hydration. Keys are managed by the engine adapter in a parallel `Map<string, string[]>` (path → keys). The contract:
+
+1. **Keys survive reorder.** After `move(path, 0, 2)`, the key that was at index 0 is now at index 2. React sees the same `key` prop, so local state, focus, and animations are preserved.
+2. **Keys are never reused.** After `remove(path, 1)`, that key is permanently retired for the lifetime of the form instance.
+3. **`getKeys(path)`** returns the current ordered key array. `ArrayField` calls this to set `key={keys[i]}` on each row — never `key={index}`.
+4. **Immutable semantics from the consumer's perspective.** All `arrayOps` methods trigger a re-render with updated values. Whether the engine mutates internally (TanStack) or replaces state (RHF) is an adapter detail invisible to field components.
+
+Field components call `arrayOps` only after checking `capabilities.fieldArrays`. If an engine lacks native array support, the adapter implements `arrayOps` via an imperative `reset(nextValues)` path — but still maintains the key map, so React keys remain stable even on the fallback path. The fallback is marked with a `console.warn` in dev mode noting the performance implication for arrays > 50 items.
 
 ### 5.2 TanStack Form adapter (primary)
 
@@ -314,7 +379,8 @@ Field components call `arrayOps` only after checking `capabilities.fieldArrays`.
 - `getFieldProps` wraps `form.Field` by calling the hook-form-free imperative helpers TanStack exposes: `form.getFieldValue(path)`, `form.setFieldValue(path, v)`, `form.getFieldMeta(path)` plus a subscription registered in an effect.
 - `byField` validators attach per field via `validators.onChange: spec.validators.byField[path]`.
 - `onChangeAsyncDebounceMs` is wired when `meta.asyncValidate` is present.
-- Array ops use `form.pushFieldValue`, `form.removeFieldValue`, `form.moveFieldValue` -- capability flag `fieldArrays: true`.
+- Array ops use `form.pushFieldValue`, `form.removeFieldValue`, `form.moveFieldValue`, `form.insertFieldValue` -- capability flag `fieldArrays: true`.
+- Key management: the adapter maintains a `Map<string, string[]>` of path → stable keys. On `push`/`insert`, a new key is appended/spliced. On `remove`, the key is spliced out and retired. On `move`, keys are reordered in parallel. `getKeys(path)` returns the current array.
 
 ### 5.3 React Hook Form adapter (secondary)
 
@@ -358,6 +424,31 @@ type LayoutNode =
   | { kind: 'section'; title?: string; description?: string; children: LayoutNode[] }
   | { kind: 'field'; path: string; col: ResponsiveCol }
   | { kind: 'divider' }
+  | { kind: 'custom'; component: string; props?: Record<string, unknown>; children?: LayoutNode[] }
+```
+
+The `custom` kind is an extensibility escape hatch. It references a named component from the **layout registry** (separate from the field registry). The renderer resolves `component` to a React component at runtime, passes `props` and renders `children` recursively if provided. This means future needs — tabs, accordions, conditional blocks, responsive hiding wrappers, inline groups — can be implemented by registering a layout component, not by changing the `LayoutNode` union.
+
+Example:
+
+```ts
+ui(Schema, {
+  layout: {
+    kind: 'section',
+    title: 'Settings',
+    children: [
+      {
+        kind: 'custom',
+        component: 'tabs',
+        props: { labels: ['General', 'Advanced'] },
+        children: [
+          { kind: 'row', children: [{ kind: 'field', path: 'name', col: { xs: 12 } }] },
+          { kind: 'row', children: [{ kind: 'field', path: 'debug', col: { xs: 12 } }] },
+        ],
+      },
+    ],
+  },
+})
 ```
 
 `compile()` produces a default layout: one section containing one row per field, each field spanning `meta.col`. Authors override by providing an explicit layout in meta:
@@ -388,6 +479,21 @@ ui(SignupSchema, {
 - `field` → `<Grid size={node.col}>` wrapping `<FieldRenderer path={node.path} />`
 - `section` → `<Stack gap>` with `Typography` heading + `Divider`
 - `divider` → `<Divider />`
+- `custom` → looks up `node.component` in a `LayoutRegistry` (a `Map<string, React.ComponentType<CustomLayoutProps>>`), passes `node.props` and recursively renders `node.children` via `LayoutRenderer`. If the component is not registered, dev-mode `console.error` with the name and a `FallbackLayoutBlock` renders the children flat with a warning badge (same pattern as `FallbackField`).
+
+```ts
+export interface CustomLayoutProps {
+  props: Record<string, unknown>
+  children: React.ReactNode      // pre-rendered children from recursive LayoutRenderer
+}
+
+export interface LayoutRegistry {
+  get(name: string): React.ComponentType<CustomLayoutProps> | undefined
+  register(name: string, component: React.ComponentType<CustomLayoutProps>): void
+}
+```
+
+A default `LayoutRegistry` ships empty. Authors register custom layout components via `<SchemaForm layoutRegistry={registry} />`. The field registry and layout registry are intentionally separate — field components deal with `FieldBinding` and form state; layout components deal with visual grouping and receive pre-rendered children.
 
 Responsive behavior flows from MUI's Grid v2, which accepts `size={{ xs, sm, md, lg, xl }}` matching `ResponsiveCol`. No custom CSS; token-driven spacing inherited from the MUI theme.
 
@@ -465,6 +571,8 @@ function FieldRenderer({ path }: { path: string }) {
 
 - `ObjectField` recursively renders its sub-spec through `LayoutRenderer` (if author provided a layout for the sub-object) or a default row-per-child fallback.
 - `ArrayField` renders each element as a group, driven by `form.arrayOps` when available, falling back to `reset`-based mutations otherwise. It enforces `depth ≤ 5` (compiled into the spec) so circular or runaway structures fail loudly.
+- `ArrayField` **must** use `arrayOps.getKeys(path)` for React `key` props — never array indices. This ensures focus, local component state, and CSS transitions survive add/remove/move operations.
+- Each row receives its key as a prop so downstream components can use it for DOM identity (e.g. `data-testid={key}` for Testing Library selectors).
 
 ---
 
@@ -521,6 +629,54 @@ function SchemaForm(props) {
 
 `FormActions` is a default submit/reset bar; consumers can pass `actions={…}` to override.
 
+### 9.1 Public API Surface and Stability Tiers
+
+The public API is small by design. This section makes the boundary explicit so consumers don't accidentally depend on internals.
+
+**Tier 1 — Public (stable, semver-protected):**
+
+| Export | Purpose |
+|---|---|
+| `SchemaForm` | The top-level form component |
+| `ui()` | Meta-annotation helper for Zod schemas |
+| `defaultRegistry` | The built-in field registry (11 field types) |
+| `createRegistry()` | Factory for custom field registries |
+| `createLayoutRegistry()` | Factory for custom layout registries |
+| `FieldBinding` (type) | The contract between engines and field components |
+| `FieldSpec` (type) | The compiled field descriptor |
+| `FieldRegistry` / `LayoutRegistry` (types) | Registry interfaces for `extends` / custom components |
+
+These are exported from `libs/shared/schema-forms/src/framework/index.ts`. Breaking changes to any of these require a major version bump.
+
+**Tier 2 — Unstable (exported but marked `@unstable`):**
+
+| Export | Purpose | Why unstable |
+|---|---|---|
+| `compile()` | Schema → FormSpec compilation | IR shape may change as new features land |
+| `FormSpec` (type) | The compiled IR | Internal structure; consumers shouldn't depend on it |
+| `FormEngine` (type) | Engine adapter interface | Will evolve when RHF adapter lands |
+| `FormHandle` (type) | Engine instance handle | Will gain capabilities when second engine ships |
+
+These are exported from `libs/shared/schema-forms/src/framework/unstable.ts` (separate entry point). Import path: `@ibc/schema-forms/unstable`. JSDoc on each export includes `@unstable` and a note that the API may change in minor versions.
+
+**Tier 3 — Internal (NOT exported):**
+
+| Module | Why internal |
+|---|---|
+| `core/meta.ts` (WeakMap internals, `getMeta()`) | Implementation detail of `ui()` |
+| `engines/tanstack/*` (adapter internals) | Engine-specific; consumers pick engine via string, never import adapter |
+| `renderer/LayoutRenderer`, `FieldRenderer` | Orchestration internals; consumers use `SchemaForm` |
+| `fields/*` (individual MUI field components) | Registered via `defaultRegistry`; override via registry, not direct import |
+| `core/errors.ts` | Internal error types |
+
+No `index.ts` barrel files exist inside `framework/` subfolders. Import from internal paths (e.g. `@ibc/schema-forms/core/compile`) is blocked by the `exports` map in `package.json` (Appendix B.4).
+
+**Enforcement:**
+
+- `package.json` `exports` field only exposes `.` and `./unstable`. All other paths resolve to nothing.
+- Phase 0 acceptance criteria: "Import from `@ibc/schema-forms/core/compile` fails with a module-not-found error in a consumer app."
+- The Appendix B checklist item ("fewer than 20 exported names") is refined: Tier 1 ≤ 10 names, Tier 2 ≤ 10 names.
+
 ---
 
 ## 10. Live Demo Dashboard
@@ -534,7 +690,7 @@ function SchemaForm(props) {
 
 ### 10.2 Example schemas to ship
 
-Place each in `src/framework/contracts/`:
+Place each in `libs/shared/schema-forms/src/framework/contracts/`:
 
 1. `signup.schema.ts` -- simple flat schema with string, enum, boolean, async email uniqueness check.
 2. `profile.schema.ts` -- nested object (`address: { street, city, zip }`), demonstrates `ObjectField`.
@@ -552,14 +708,15 @@ Place each in `src/framework/contracts/`:
 
 ## 11. Dependencies to Add
 
-Targeting **React 19 + MUI v9** for v1 (see Appendix C for the rationale):
+Targeting **React 18 + MUI v7 + Storybook 10** for v1. Design tokens live in `libs/shared/tokens/` as CSS custom properties and are bridged into the MUI theme via `createTheme({ cssVariables: true })`.
 
 ```
-react                           ^19       # React 19 + React Compiler
-react-dom                       ^19
-@mui/material                   ^9        # MUI v9 (Apr 2026)
-@mui/icons-material             ^9
-@emotion/react @emotion/styled  ^11       # optional in v9+; required on v6/v7
+react                           ^18.3     # React 18 (current)
+react-dom                       ^18.3
+@mui/material                   ^7        # MUI v7 (React 18 compatible)
+@mui/icons-material             ^7
+@emotion/react                  ^11
+@emotion/styled                 ^11
 @tanstack/react-form            ^1        # primary engine
 @tanstack/zod-form-adapter      ^0.4+     # Zod bridge
 react-hook-form                 ^7        # secondary engine (v1.1)
@@ -576,8 +733,9 @@ Dev-only:
 vitest                          ^2
 jsdom                           ^25
 msw                             ^2
-@storybook/addon-themes         ^8
-@storybook/test                 ^8
+storybook                       ^10       # Storybook 10 (already installed)
+storybook/addon-themes          ^10
+storybook/test                  ^10
 @axe-core/playwright            ^4        # later, when E2E is added
 ```
 
@@ -623,13 +781,79 @@ This is the only guarantee that swapping engines is safe.
 
 Cover the demo dashboard: pick schema → fill fields → validation states → submit → success toast. One test per demo schema. Run axe-core on each rendered page.
 
+### 12.5 Performance Guardrails
+
+Large forms (50+ fields, nested arrays) will re-render heavily without explicit rules. These are enforced via code review and tested with the profiling story (Phase 6).
+
+**Hard rules:**
+
+1. **`FieldRenderer` subscribes only to its own path.** Each `FieldRenderer` calls `handle.getFieldProps(path)` which subscribes to that single path's value, error, touched, and dirty state. A keystroke in field A must not trigger a re-render of field B. Engine adapters must use path-scoped subscriptions (TanStack's `form.useField` / RHF's `useWatch({ name })`).
+
+2. **`LayoutRenderer` is static.** It receives the `LayoutNode` tree (which is a product of `compile()` and never changes for a given schema) and renders the grid structure. It must not subscribe to form values or re-render when fields change. Only `FieldRenderer` leaf nodes re-render.
+
+3. **No full-form re-render on every change.** `SchemaForm` and `FormProvider` must not pass form values via context. The context provides `spec`, `handle`, and `registry` — all stable references. Field-level reactivity flows through `getFieldProps`, not through context updates.
+
+4. **Array rows are independently memoized.** Each `ArrayField` row component receives a stable key (from `arrayOps.getKeys`) and subscribes only to its own index path. Adding/removing a row at index N must not re-render rows 0..N-1.
+
+5. **`compile()` is called once per schema identity.** `SchemaForm` wraps `compile()` in `useMemo(() => compile(schema), [schema])`. Since schemas are module-level constants, this means compile runs once per mount.
+
+**Verification:**
+
+- A Storybook story (`Performance/LargeForm`) renders a 50-field schema. A play function types into field 25 and asserts (via `React.Profiler` callback or render-count ref) that fewer than 3 components re-rendered.
+- Phase 6 acceptance criteria includes: "Typing in one field does not trigger re-render of any other field (verified via React Profiler or render-count test)."
+
+### 12.6 Dev Tooling
+
+Debugging schema-driven forms is harder than hand-coded forms because the indirection hides what's happening. Ship these dev tools from Phase 6 onward (dev-mode only, tree-shaken in production):
+
+**1. Schema Debug Panel (`<SchemaDebugPanel />`)**
+
+A collapsible overlay (toggled via `Ctrl+Shift+D` or a `debug` prop on `SchemaForm`) that shows:
+
+- The compiled `FormSpec` as a JSON tree (fields, layout, validators).
+- Current form values (live-updating).
+- Current errors, touched, and dirty state per field.
+- The active engine name and its capabilities.
+
+Implementation: a React context consumer that reads `spec`, `handle.values`, and `handle.errors`. Rendered inside `SchemaForm` only when `process.env.NODE_ENV !== 'production'`.
+
+**2. Field Path Inspector**
+
+Hovering over any rendered field (when debug mode is active) shows a tooltip with:
+
+- `path` (e.g. `address.city`)
+- Resolved `FieldSpec` (type, meta, validators)
+- Current `FieldBinding` snapshot (value, error, touched, dirty)
+- Registry resolution (which component is rendering this field)
+
+Implementation: `FieldRenderer` wraps its output in a thin `<FieldInspectorWrapper>` in dev mode. The wrapper uses `onMouseEnter` to populate a context that the debug panel reads.
+
+**3. Validation Trace Logger**
+
+When `SchemaForm` receives `debug={true}` (or `localStorage.__SCHEMA_FORM_DEBUG` is set), the engine adapter logs to `console.group`:
+
+- `[field:email] validate.onChange → ✓ valid` or `→ ✗ "Invalid email"`
+- `[form] validate.onSubmit → ✗ 3 errors: email, password, role`
+- `[field:username] validate.onChangeAsync → pending (debounce 300ms)`
+- `[field:username] validate.onChangeAsync → ✓ valid (took 142ms)`
+
+This is implemented as a `LoggingEngineDecorator` that wraps the real engine adapter and intercepts `getFieldProps` and `submit` calls. Not a middleware — a simple decorator applied conditionally in dev mode.
+
+**Phase mapping:**
+
+| Tool | Ships in | Acceptance criteria |
+|---|---|---|
+| Validation Trace Logger | Phase 5 (engine adapter) | Logger output appears in console when `debug={true}` |
+| Schema Debug Panel | Phase 6 (SchemaForm) | Panel toggles open, shows spec + live values |
+| Field Path Inspector | Phase 6 (FieldRenderer) | Hover shows path + binding snapshot in dev mode |
+
 ---
 
 ## 13. Phased Delivery
 
 Execution is broken into small, sequential phases. Each phase is sized to fit in a single PR, ends with a runnable artifact, and has a clear entry gate (what must be true before starting) and exit gate (what must be true before merging). Phases in **v1** are required; phases marked **v1.1** are deferred per the simplicity review in Appendix A.
 
-**Stack target:** React 19 + MUI v9 + TanStack Form + Zod v3. See Appendix C for the rationale and the downlevel compatibility story.
+**Stack target:** React 18 + MUI v7 + design tokens + TanStack Form + Zod v3. Storybook 10 for component development. Nx monorepo with pnpm.
 
 ### One phase = one PR
 
@@ -680,17 +904,17 @@ Every phase PR -- without exception -- must satisfy this universal checklist in 
 
 **Mechanical (CI-enforced):**
 
-- [ ] `npm run build` succeeds (TypeScript strict mode, zero errors).
-- [ ] `npm test` passes (Vitest, zero failures). New code is covered by tests at the coverage threshold for its library type (see Section 6c of the skill: `type:ui` 90%, `type:util` 95%, `type:feature` 75%, `type:data-access` 85%).
-- [ ] `npm run lint` passes (ESLint strict + `jsx-a11y` recommended; zero errors).
-- [ ] `npm run build-storybook` succeeds.
+- [ ] `pnpm nx run-many -t build` succeeds (TypeScript strict mode, zero errors).
+- [ ] `pnpm test` passes (Vitest, zero failures). New code is covered by tests at the coverage threshold for its library type (see Section 6c of the skill: `type:ui` 90%, `type:util` 95%, `type:feature` 75%, `type:data-access` 85%).
+- [ ] `pnpm nx run-many -t lint` passes (ESLint strict + `jsx-a11y` recommended; zero errors).
+- [ ] `pnpm run build-storybook` succeeds.
 - [ ] `@storybook/addon-a11y` reports zero new violations on any new or modified story.
 
 **Manual (reviewer-enforced):**
 
 - [ ] The PR description matches the template in Section 13.1, entry/acceptance bullets pasted from the plan.
 - [ ] The PR touches only files listed in the phase's "PR contents". No cross-phase refactors.
-- [ ] No new `useMemo` / `useCallback` / `React.memo` has been added (React Compiler handles memoization; see Section 16 of the skill).
+- [ ] Prefer minimal `useMemo` / `useCallback` / `React.memo` -- only where profiling shows a real performance need.
 - [ ] No new inline styles for values a token covers (colors, spacing, radii, shadows, typography); all styling flows through MUI theme + `sx` or design tokens.
 - [ ] No barrel `index.ts` files added inside `framework/` subfolders (only the top-level public-surface `index.ts`; see Appendix B.4 exports map).
 - [ ] Public API additions (new exports from the root) are documented with JSDoc including one example.
@@ -699,14 +923,14 @@ Every phase PR -- without exception -- must satisfy this universal checklist in 
 
 **Phase-specific exit artifact:**
 
-Every phase must produce at least one observable artifact a reviewer can click on or run. Typically this is a Storybook story, a `npm run dev` route, or a Vitest test file. "Code landed, no visible artifact" is never acceptable -- even pure-core phases (1, 2, 3, 5) produce test files the reviewer runs.
+Every phase must produce at least one observable artifact a reviewer can click on or run. Typically this is a Storybook story, a `pnpm nx dev shell` route, or a Vitest test file. "Code landed, no visible artifact" is never acceptable -- even pure-core phases (1, 2, 3, 5) produce test files the reviewer runs.
 
 ### Map of phases
 
 | # | Phase | Release | Depends on | Rough size |
 |---|-------|---------|------------|------------|
-| -1 | Consuming app upgrade to React 19 + MUI v9 | pre-v1 | -- | Small |
-| 0 | Foundations (deps, theme, test runner) | v1 | -1 | Small |
+| -1 | ~~Consuming app upgrade~~ | pre-v1 | -- | **DONE** (React 18 + Storybook 10 + Nx monorepo already in place) |
+| 0 | Foundations (deps, test runner) | v1 | -- | Small |
 | 1 | Core types + `ui()` helper | v1 | 0 | Small |
 | 2 | `compile()` (schema → FormSpec) | v1 | 1 | Medium |
 | 3 | Field registry + FallbackField | v1 | 1 | Small |
@@ -716,74 +940,57 @@ Every phase must produce at least one observable artifact a reviewer can click o
 | 7 | Nested (`ObjectField`) and arrays (`ArrayField`) | v1 | 6 | Medium |
 | 8 | Demo dashboard (one page, 4 schemas, state + validation panels) | v1 | 6, 7 | Small |
 | 9 | Polish: error boundaries, form-level errors, docs, quickstart | v1 | 6, 7, 8 | Small |
-| 10 | Nx promotion (Appendix B) | v1 or later | 9 | Medium |
+| 10 | ~~Nx promotion~~ | v1 or later | 9 | **DONE** (already an Nx monorepo with `libs/shared/schema-forms/`) |
 | 11 | RHF adapter + parity contract tests | **v1.1** | 5, 6 | Medium |
 | 12 | Engine switcher + comparison page | **v1.1** | 11 | Small |
 | 13 | Advanced meta: `asyncValidate`, `dependsOn`, `hidden`, `readOnly` | **v1.1** | 6 | Medium |
 
-Phases 0-9 in order give a junior dev a shippable v1. Phase 10 (Nx promotion) can happen at any time from 9 onward. Phase -1 is the prerequisite upgrade work on the consuming app; skip it only if the app is already on React 19 + MUI v9.
+Phases 0-9 in order give a junior dev a shippable v1. Phase 10 (Nx promotion) is already complete -- the project is an Nx monorepo with `libs/shared/schema-forms/`. Phase -1 is no longer needed -- the app is already on React 18 + Storybook 10.
 
-### Phase -1 -- Consuming app upgrade to React 19 + MUI v9
+### Phase -1 -- ~~Consuming app upgrade~~ (COMPLETE)
 
-*Outcome:* the repo is on React 19 + MUI v9 so the framework is built on the primary target from day one.
-
-- Entry gate: the existing app still runs on whatever version it's on.
-- Execute the checklist in Appendix C.5 exactly. In order:
-  1. Bump React: `npm install react@^19 react-dom@^19`. Address any `forwardRef`-deprecation warnings by moving to plain `ref` props.
-  2. Install React Compiler Babel plugin and wire into `vite.config.ts` per the skill's Section 16.
-  3. Bump MUI: `npm install @mui/material@^9 @mui/icons-material@^9 @mui/system@^9`.
-  4. Run the MUI codemod: `npx @mui/codemod@latest v9.0.0/preset-safe src/`.
-  5. Grep and fix remaining deprecations: `component=` / `componentsProps=` → `slots` + `slotProps`; deprecated system layout props on `<Box>` / `<Grid>` → `sx`; remove `disableEscapeKeyDown` from `Dialog` / `Modal`.
-  6. Ensure `createTheme({ cssVariables: true })` is active.
-  7. Remove any `MuiTouchRipple` theme overrides.
-- Acceptance criteria:
-  - [ ] `package.json` shows `react@^19`, `@mui/material@^9`, `@mui/icons-material@^9`, `@mui/system@^9`.
-  - [ ] `babel-plugin-react-compiler` is installed and wired into `vite.config.ts`.
-  - [ ] `npm run build` succeeds on TypeScript strict mode with zero errors.
-  - [ ] `npm run dev` loads the app and all existing routes render.
-  - [ ] `npm run storybook` loads and every existing story renders.
-  - [ ] `@storybook/addon-a11y` reports zero new violations vs. pre-upgrade baseline.
-  - [ ] Vitest suite passes; any intentional snapshot updates are called out in the PR description.
-  - [ ] Zero occurrences of `forwardRef`, `component=`, `componentsProps=`, or `disableEscapeKeyDown` remain in `src/`.
-  - [ ] `createTheme({ cssVariables: true })` is active (verify `--mui-palette-*` variables on `:root`).
-- PR contents: `package.json` + lockfile diff, codemod output, hand-fixed deprecations, theme adjustments. No framework code yet.
-
-Skip this phase if the app is already on React 19 + MUI v9.
+*Status:* **Already done.** The repo runs React 18 + Storybook 10 in an Nx monorepo with pnpm. Phase -1 scope (MUI install + theme wiring) is folded into Phase 0.
 
 ### Phase 0 -- Foundations
 
-*Outcome:* the repo is ready to build schema-driven forms on top of React 19 + MUI v9.
+*Outcome:* the repo is ready to build schema-driven forms on top of React 18 + MUI v7 + design tokens.
 
-- Entry gate: Phase -1 merged, or the app is already on React 19 + MUI v9.
-- Add framework dependencies from Section 11 (Zod v3, TanStack Form + zod adapter; dev: Vitest, jsdom, Testing Library, MSW).
+- Entry gate: Nx monorepo structure in place with `libs/shared/schema-forms/`.
+- Add framework dependencies from Section 11 (MUI v7, Zod v3, TanStack Form + zod adapter; dev: Vitest, jsdom, Testing Library, MSW).
 - Configure Vitest with jsdom + `@testing-library/jest-dom` matchers. One smoke test file that imports React and asserts `1 + 1 === 2`.
-- Create `src/framework/tokens/mui-theme.ts` bridging `src/tokens/design-tokens.css` into `createTheme({ cssVariables: true, colorSchemes: { light, dark } })`.
-- Wrap `src/main.tsx` with `<ThemeProvider theme={theme}><CssBaseline />…</ThemeProvider>`.
+- Create `libs/shared/schema-forms/src/framework/tokens/mui-theme.ts` bridging `libs/shared/tokens/src/tokens/design-tokens.css` into `createTheme({ cssVariables: true, colorSchemes: { light, dark } })`.
+- Wrap `apps/shell/src/main.tsx` with `<ThemeProvider theme={theme}><CssBaseline />…</ThemeProvider>`.
 - Wrap Storybook via `.storybook/preview.ts` using `withThemeFromJSXProvider`.
 - Acceptance criteria:
-  - [ ] Framework deps installed: `zod@^3`, `@tanstack/react-form@^1`, `@tanstack/zod-form-adapter`, `@testing-library/react@^16`, `@testing-library/user-event@^14`, `vitest@^2`, `jsdom@^25`, `msw@^2`.
-  - [ ] `npm test` runs via Vitest and passes the smoke test.
-  - [ ] `npm run dev` loads the app; `npm run storybook` loads Storybook.
+  - [ ] Framework deps installed: `@mui/material@^7`, `@mui/icons-material@^7`, `@emotion/react@^11`, `@emotion/styled@^11`, `zod@^3`, `@tanstack/react-form@^1`, `@tanstack/zod-form-adapter`, `@testing-library/react@^16`, `@testing-library/user-event@^14`, `vitest@^2`, `jsdom@^25`, `msw@^2`.
+  - [ ] `pnpm test` runs via Vitest and passes the smoke test.
+  - [ ] `pnpm nx dev shell` loads the app; `pnpm run storybook` loads Storybook.
   - [ ] A throwaway Storybook story renders an MUI Button with a token-derived palette (verifies theme + tokens wired).
   - [ ] `--mui-palette-*` CSS variables are present on `:root` (verifies `cssVariables: true` wired).
-  - [ ] `ThemeProvider` wraps the app in `src/main.tsx` and Storybook via `withThemeFromJSXProvider` in `.storybook/preview.ts`.
-  - [ ] No framework code (`src/framework/core`, `engines`, `renderer`, `fields`) exists yet -- this phase only sets up foundations.
-- PR contents: `package.json` diff, `vitest.config.ts`, `src/framework/tokens/mui-theme.ts`, theme provider wiring, one smoke test, one temporary Storybook check.
+  - [ ] `ThemeProvider` wraps the app in `apps/shell/src/main.tsx` and Storybook via `withThemeFromJSXProvider` in `.storybook/preview.ts`.
+  - [ ] No framework code (`libs/shared/schema-forms/src/framework/core`, `engines`, `renderer`, `fields`) exists yet -- this phase only sets up foundations.
+- PR contents: `package.json` diff, `vitest.config.ts`, `libs/shared/schema-forms/src/framework/tokens/mui-theme.ts`, theme provider wiring, one smoke test, one temporary Storybook check.
 
 ### Phase 1 -- Core types and `ui()` helper
 
 *Outcome:* a schema author can attach UI metadata to any Zod node.
 
 - Entry gate: Phase 0 merged.
-- Create `src/framework/core/types.ts` with `FieldMeta`, `FieldSpec`, `FormSpec`, `LayoutNode`, `ResponsiveCol`, `FieldType` (v1 meta = `type`, `label`, `helperText`, `placeholder`, `options`, `col`, `componentProps`).
-- Create `src/framework/core/meta.ts` exporting `ui<T extends z.ZodTypeAny>(schema: T, meta: FieldMeta): T`. Serializes meta as JSON into `schema.describe(...)`.
-- Create `src/framework/core/errors.ts` with a single exported `SchemaFormError extends Error` class that carries `{ path: string }`.
-- Unit tests in `src/framework/core/__tests__/meta.test.ts`:
-  - `ui()` round-trips meta through `.optional()`, `.nullable()`, `.default()`, `.describe()`.
-  - Malformed envelopes throw `SchemaFormError` with the path.
+- Create `libs/shared/schema-forms/src/framework/core/types.ts` with `FieldMeta`, `FieldSpec`, `FormSpec`, `LayoutNode`, `ResponsiveCol`, `FieldType` (v1 meta = `type`, `label`, `helperText`, `placeholder`, `options`, `col`, `componentProps`).
+- Create `libs/shared/schema-forms/src/framework/core/meta.ts` exporting:
+  - `ui<T extends z.ZodTypeAny>(schema: T, meta: FieldMeta): T` — stores meta in a module-scoped `WeakMap<z.ZodTypeAny, FieldMeta>` (primary) **and** serializes it into `schema.describe(...)` (fallback for combinator survival).
+  - `getMeta(schema: z.ZodTypeAny): FieldMeta | undefined` — checks WeakMap first, falls back to parsing the `.describe()` JSON envelope.
+- Create `libs/shared/schema-forms/src/framework/core/errors.ts` with a single exported `SchemaFormError extends Error` class that carries `{ path: string }`.
+- Unit tests in `libs/shared/schema-forms/src/framework/core/__tests__/meta.test.ts`:
+  - `ui()` stores meta retrievable via `getMeta()` on the original schema reference (WeakMap path).
+  - `getMeta()` recovers meta through `.optional()`, `.nullable()`, `.default()` wrappers (`.describe()` fallback path).
+  - When another tool overwrites `.describe()`, `getMeta()` still returns correct meta from WeakMap on the original reference.
+  - Malformed `.describe()` envelopes throw `SchemaFormError` with the path.
 - Acceptance criteria:
-  - [ ] `ui(schema, meta)` returns the same Zod schema reference with an embedded meta envelope readable by a `readMeta()` helper.
-  - [ ] Round-trip tests pass for `.optional()`, `.nullable()`, `.default()`, `.describe()`, `.refine()`.
+  - [ ] `ui(schema, meta)` returns the same Zod schema reference with meta readable by `getMeta()` via WeakMap (primary) and `.describe()` envelope (fallback).
+  - [ ] `getMeta()` returns correct meta from the WeakMap on the original schema reference.
+  - [ ] `getMeta()` returns correct meta through `.optional()`, `.nullable()`, `.default()`, `.refine()` wrappers via the `.describe()` fallback.
+  - [ ] If `.describe()` is overwritten by external tooling, `getMeta()` still succeeds on the original (unwrapped) reference via WeakMap.
   - [ ] TypeScript type of `ui(z.string(), meta)` is still `z.ZodString` (no type narrowing lost).
   - [ ] Calling `ui()` with invalid meta throws `SchemaFormError` carrying a field path in dev mode; production mode falls through silently with a `console.warn`.
   - [ ] No renderer or engine code imported anywhere in `core/`.
@@ -794,16 +1001,17 @@ Skip this phase if the app is already on React 19 + MUI v9.
 *Outcome:* any Zod schema can be normalized to a `FormSpec` the renderer will consume.
 
 - Entry gate: Phase 1 merged.
-- Create `src/framework/core/compile.ts` exporting `compile(schema): FormSpec`.
+- Create `libs/shared/schema-forms/src/framework/core/compile.ts` exporting `compile(schema): FormSpec`.
+- **Structural constraint:** the walk produces an intermediate `SchemaNode[]` array (typed in `types.ts`) that all downstream logic reads from, rather than re-traversing the Zod `_def` tree. This intermediate representation is the seam for the multi-pass refactor in Phase 13.
 - Implementation rules (from Section 4.3):
-  - Walk the Zod tree once; build `fields` map keyed by dot-path, `order`, `defaults`, `validators.byField`, `validators.whole`.
+  - Walk the Zod tree once into `SchemaNode[]`; then build `fields` map keyed by dot-path, `order`, `defaults`, `validators.byField`, `validators.whole` from those nodes.
   - Infer `type` from Zod node if meta doesn't set it (`ZodString`→`text`, `ZodNumber`→`number`, `ZodBoolean`→`checkbox`, `ZodEnum`→`select`, `ZodArray`→`array`, `ZodObject`→`object`, `ZodDate`→`date`, literal `true`→`checkbox`).
   - Derive `label` from field name (camel→Title Case) if meta omits it.
   - Default `col` to `{ xs: 12 }`.
   - Enforce depth limit of 5 -- throw `SchemaFormError`.
   - Default layout = one row per field in author order.
 - Memoize via `WeakMap` keyed on the schema reference.
-- Unit tests in `src/framework/core/__tests__/compile.test.ts`:
+- Unit tests in `libs/shared/schema-forms/src/framework/core/__tests__/compile.test.ts`:
   - Flat schema snapshot.
   - Inference covers every Zod node type.
   - Nested object depth produces correct paths (`address.city`).
@@ -826,9 +1034,9 @@ Skip this phase if the app is already on React 19 + MUI v9.
 *Outcome:* the renderer has a lookup mechanism for field types and a graceful fallback for unknown ones.
 
 - Entry gate: Phase 1 merged (can run in parallel with Phase 2).
-- Create `src/framework/core/registry.ts` with `createDefaultRegistry()`, `FieldRegistry` type, and `extend()` helper.
+- Create `libs/shared/schema-forms/src/framework/core/registry.ts` with `createDefaultRegistry()`, `FieldRegistry` type, and `extend()` helper.
 - Registry is seeded empty for now; Phase 4 will populate it.
-- Create `src/framework/renderer/FallbackField.tsx` -- an MUI `Alert` (severity `warning`) + generic `TextField` wired to `binding.value` / `binding.onChange`. In dev, logs via `console.warn`.
+- Create `libs/shared/schema-forms/src/framework/renderer/FallbackField.tsx` -- an MUI `Alert` (severity `warning`) + generic `TextField` wired to `binding.value` / `binding.onChange`. In dev, logs via `console.warn`.
 - Unit tests:
   - `get(type)` returns registered component; returns `undefined` for unknown.
   - `extend()` does not mutate the base registry.
@@ -844,48 +1052,50 @@ Skip this phase if the app is already on React 19 + MUI v9.
 
 ### Phase 4 -- Default field components (flat types only)
 
-*Outcome:* the 8 flat MUI-backed field components exist and are documented in Storybook.
+*Outcome:* the 9 flat MUI-backed field components exist and are documented in Storybook.
 
 - Entry gate: Phase 3 merged.
 - Build, one component per commit inside the phase PR if possible:
   - `TextField` (text, password, email -- variants via `type`)
-  - `NumberField` -- wraps MUI v9's Base UI `NumberField` primitive when available; falls back to `TextField type="number"` on v6/v7 (see Appendix C.5a)
+  - `NumberField` -- wraps MUI `TextField type="number"` for v1; upgrade to Base UI `NumberField` if MUI v9+ is adopted later
   - `TextareaField`
   - `SelectField`
   - `CheckboxField`
   - `SwitchField`
   - `RadioGroupField`
   - `DateField` (native `type="date"` via MUI `TextField` for v1; upgrade to `@mui/x-date-pickers` if needed later)
+  - `FileUploadField` -- drag-and-drop zone + hidden `<input type="file">`; supports `accept`, `multiple`, `maxSizeMB` via `componentProps`; renders file list with remove buttons
 - Each component accepts `{ spec, binding, form }`, reads `label` / `helperText` / `placeholder` / `options` from `spec.meta`, wires `binding.value` / `binding.onChange` / `binding.onBlur`, surfaces `binding.error` via MUI `error` + `helperText`.
 - Every component co-located with a `*.stories.tsx` file showing `Default`, `WithError`, `Disabled`. No `ObjectField` or `ArrayField` yet.
 - Acceptance criteria:
-  - [ ] All 8 components exist, each as `src/framework/fields/<Name>/<Name>.tsx` + `.stories.tsx` + `.test.tsx`.
+  - [ ] All 9 components exist, each as `libs/shared/schema-forms/src/framework/fields/<Name>/<Name>.tsx` + `.stories.tsx` + `.test.tsx`.
   - [ ] Each component accepts `{ spec, binding, form }` and only these three props; implementation details (e.g., MUI-specific props) are passed through `spec.meta.componentProps`.
   - [ ] Each component renders `spec.meta.label` wired to the input via `htmlFor` / `aria-labelledby`.
   - [ ] Each component surfaces `binding.error` inline via MUI `helperText` + `error` state.
   - [ ] Each component calls `binding.onBlur` on blur and `binding.onChange` with the correct typed value (not the raw DOM event).
   - [ ] Each component's `Default`, `WithError`, `Disabled` stories render in Storybook.
   - [ ] `@storybook/addon-a11y` reports zero violations on every story.
-  - [ ] All 8 components are registered in `defaultRegistry` (Phase 3's empty registry now populated).
+  - [ ] All 9 components are registered in `defaultRegistry` (Phase 3's empty registry now populated).
   - [ ] 80%+ statement coverage on each field component.
-- PR contents: 8 component folders, 8 stories, 8 test files. Register all into the default registry created in Phase 3.
+- PR contents: 9 component folders, 9 stories, 9 test files. Register all into the default registry created in Phase 3.
 
 ### Phase 5 -- TanStack Form engine adapter
 
 *Outcome:* a working `FormEngine` built on TanStack Form.
 
 - Entry gate: Phases 2 and 4 merged.
-- Create `src/framework/engines/types.ts` with `FormEngine`, `FormHandle`, `FieldBinding` (v1 shape; no `capabilities` yet).
-- Create `src/framework/engines/tanstack/TanStackEngine.ts` and `useTanStackForm.ts`.
+- Create `libs/shared/schema-forms/src/framework/engines/types.ts` with `FormEngine`, `FormHandle`, `FieldBinding` (v1 shape; no `capabilities` yet).
+- Create `libs/shared/schema-forms/src/framework/engines/tanstack/TanStackEngine.ts` and `useTanStackForm.ts`.
   - `useForm({ spec, defaultValues, onSubmit })` wraps `@tanstack/react-form`.
-  - `getFieldProps(path)` returns `{ value, onChange, onBlur, error, name }` by subscribing to the TanStack field meta.
+  - `getFieldProps(path)` returns `{ value, onChange, onBlur, error, touched, dirty, isValidating, name }` by subscribing to the TanStack field meta.
   - Per-field validators attach via `validators.onChange: spec.validators.byField[path]`.
-  - Array operations exposed via `arrayOps: { push, remove, move }` backed by TanStack's array helpers.
+  - Array operations exposed via `arrayOps: { push, insert, remove, move, getKeys }` backed by TanStack's array helpers + adapter-managed key map.
 - Unit tests using `@testing-library/react` + a tiny test harness:
   - Typing into a field updates `values`.
   - Invalid values produce the expected Zod error.
   - `submit()` resolves when valid; rejects when invalid.
-  - Array push/remove/move mutate correctly.
+  - Array push/insert/remove/move mutate correctly.
+  - Array keys remain stable across mutations.
 - Acceptance criteria:
   - [ ] `useTanStackForm({ spec, defaultValues, onSubmit })` returns a `FormHandle` matching `engines/types.ts` exactly.
   - [ ] `handle.getFieldProps('email')` returns `{ value, onChange, onBlur, error, name }` with `name === 'email'`.
@@ -893,7 +1103,9 @@ Skip this phase if the app is already on React 19 + MUI v9.
   - [ ] Zod `email()` validator surfaces as `handle.errors.email[0]` on invalid input.
   - [ ] Async validators with `onChangeAsyncDebounceMs: 300` fire at most once per 300ms of typing (verified via fake timers).
   - [ ] `handle.submit()` resolves when valid; when invalid, it rejects *without* calling the user's `onSubmit`.
-  - [ ] `handle.arrayOps.push('items', value)` adds an item; `.remove('items', 0)` removes the first; `.move('items', 0, 1)` swaps.
+  - [ ] `handle.arrayOps.push('items', value)` adds an item; `.insert('items', 0, value)` inserts at index 0; `.remove('items', 0)` removes the first; `.move('items', 0, 1)` swaps.
+  - [ ] `handle.arrayOps.getKeys('items')` returns `['__fk_0']` after one push; after a second push returns `['__fk_0', '__fk_1']`; after `remove('items', 0)` returns `['__fk_1']` (key `__fk_0` is retired).
+  - [ ] After `move('items', 0, 1)`, `getKeys` returns keys in the new order (not regenerated).
   - [ ] No `SchemaForm` or renderer imports anywhere in `engines/`.
 - PR contents: 3 files + 1 test file.
 
@@ -902,15 +1114,15 @@ Skip this phase if the app is already on React 19 + MUI v9.
 *Outcome:* a consumer can call `<SchemaForm schema={…} onSubmit={…} />` and get a working form.
 
 - Entry gate: Phases 2, 3, 4, 5 merged.
-- Create `src/framework/renderer/`:
+- Create `libs/shared/schema-forms/src/framework/renderer/`:
   - `FormContext.ts` -- React context for `{ spec, handle, registry }`.
   - `LayoutRenderer.tsx` -- translates `LayoutNode` tree into MUI `Grid` v2 tree.
   - `FieldRenderer.tsx` -- resolves `spec.type` via registry, renders component or `FallbackField`.
   - `SchemaForm.tsx` -- top-level orchestrator (compile spec, call engine `useForm`, wrap in provider, render layout).
   - `FormActions.tsx` -- default submit/reset bar with `disabled={!isValid || isSubmitting}`.
-- Public API from `src/framework/index.ts`:
+- Public API from `libs/shared/schema-forms/src/framework/index.ts`:
   - `SchemaForm`, `ui`, `defaultRegistry` only. Nothing else exported from the root.
-- Create `src/framework/contracts/signup.schema.ts` with the schema from Section 4.1.
+- Create `libs/shared/schema-forms/src/framework/contracts/signup.schema.ts` with the schema from Section 4.1.
 - Storybook: `SchemaForm/SchemaForm.stories.tsx` with `Default` and `WithValidationErrors` (play function fills invalid values and asserts inline errors).
 - Acceptance criteria:
   - [ ] `<SchemaForm schema={SignupSchema} onSubmit={fn} />` renders a working form with one field per schema property.
@@ -919,10 +1131,11 @@ Skip this phase if the app is already on React 19 + MUI v9.
   - [ ] Submit with valid values calls `onSubmit` with a value typed as `z.infer<typeof SignupSchema>` (TypeScript-checked).
   - [ ] Submit with invalid values does NOT call `onSubmit`; invalid fields are highlighted and focus moves to the first invalid field.
   - [ ] `LayoutRenderer` produces the default layout (one row per field) when the schema has no layout meta.
+  - [ ] `LayoutRenderer` renders a `custom` node by resolving it from the `LayoutRegistry`; an unregistered name renders `FallbackLayoutBlock` with a dev-mode console error.
   - [ ] `FieldRenderer` falls back to `FallbackField` when a schema uses an unregistered `type`.
-  - [ ] Public `src/framework/index.ts` exports exactly three names: `SchemaForm`, `ui`, `defaultRegistry`.
+  - [ ] Public `libs/shared/schema-forms/src/framework/index.ts` exports exactly three names: `SchemaForm`, `ui`, `defaultRegistry`.
   - [ ] a11y addon reports zero violations on the `SchemaForm/Default` and `SchemaForm/WithValidationErrors` stories.
-  - [ ] 80%+ statement coverage on files in `src/framework/renderer/`.
+  - [ ] 80%+ statement coverage on files in `libs/shared/schema-forms/src/framework/renderer/`.
 - PR contents: 5 renderer files, `FormContext`, `SchemaForm/SchemaForm.stories.tsx`, `signup.schema.ts`, `index.ts` public surface, renderer tests. No changes to `core/`, `engines/`, or `fields/`.
 
 ### Phase 7 -- Nested objects and arrays
@@ -930,18 +1143,21 @@ Skip this phase if the app is already on React 19 + MUI v9.
 *Outcome:* nested schemas and dynamic arrays render correctly.
 
 - Entry gate: Phase 6 merged.
-- Create `src/framework/fields/ObjectField/ObjectField.tsx` -- recursively renders sub-specs via `LayoutRenderer`.
-- Create `src/framework/fields/ArrayField/ArrayField.tsx` -- uses `form.arrayOps` to add/remove rows, each row is a sub-layout of the item schema.
+- Create `libs/shared/schema-forms/src/framework/fields/ObjectField/ObjectField.tsx` -- recursively renders sub-specs via `LayoutRenderer`.
+- Create `libs/shared/schema-forms/src/framework/fields/ArrayField/ArrayField.tsx` -- uses `form.arrayOps` to add/remove/insert/move rows, each row keyed via `arrayOps.getKeys(path)`. Each row is a sub-layout of the item schema.
 - Register both in the default registry.
-- Create `src/framework/contracts/profile.schema.ts` (nested `address`) and `src/framework/contracts/survey.schema.ts` (array of question/answer).
+- Create `libs/shared/schema-forms/src/framework/contracts/profile.schema.ts` (nested `address`) and `libs/shared/schema-forms/src/framework/contracts/survey.schema.ts` (array of question/answer).
 - Storybook stories demonstrating both.
-- Tests: `ArrayField` push/remove behavior via Testing Library; depth-limit violation path in `compile.test.ts`.
+- Tests: `ArrayField` push/remove/move/insert behavior via Testing Library; key stability assertions; depth-limit violation path in `compile.test.ts`.
 - Acceptance criteria:
   - [ ] `ObjectField` renders nested paths correctly (`address.city` → `<input name="address.city">`).
   - [ ] Editing a nested field updates the parent `values` tree without clobbering siblings.
   - [ ] `ArrayField` renders an "Add" button; clicking it calls `form.arrayOps.push(path, defaults)` and a new row appears.
   - [ ] Each array row renders a "Remove" button that calls `form.arrayOps.remove(path, index)`.
   - [ ] Array rows render with their own sub-layout (one row per item field) derived from the item schema.
+  - [ ] **Key stability:** each row's React `key` comes from `arrayOps.getKeys(path)[i]`, not from the array index. Verified: after `move(path, 0, 2)`, the DOM node for the moved item retains its `data-testid` key.
+  - [ ] **Key uniqueness:** after `remove(path, 1)` followed by `push(path, newItem)`, the new item's key is different from the removed item's key.
+  - [ ] **Focus preservation:** typing in an input inside array row 1, then clicking "Remove" on row 0, leaves focus inside the same logical row (now at index 0) without re-mounting.
   - [ ] Depth-limit story in Storybook shows a compile error message when a schema nests past 5 levels.
   - [ ] `profile.stories.tsx` and `survey.stories.tsx` have `Default`, `WithValidationErrors`, and `Submitting` variants.
   - [ ] a11y addon reports zero violations on both stories (labels associated with inputs, "Add"/"Remove" buttons have accessible names).
@@ -949,19 +1165,19 @@ Skip this phase if the app is already on React 19 + MUI v9.
 
 ### Phase 8 -- Demo dashboard
 
-*Outcome:* a single page a junior can run (`npm run dev`) that showcases the framework.
+*Outcome:* a single page a junior can run (`pnpm nx dev shell`) that showcases the framework.
 
 - Entry gate: Phase 7 merged.
-- Build `src/demo/App.tsx` with a router route:
+- Build `apps/shell/src/App.tsx` with a router route:
   - `/` = `Dashboard` page with:
     - `SchemaPicker` (dropdown listing 4 schemas: signup, profile, survey, contact)
     - `<SchemaForm>` rendered for the chosen schema
     - `StatePreview` panel showing `JSON.stringify(currentValues, null, 2)` (subscribes to the form via a hook exposed by the renderer)
     - `ValidationPanel` listing current errors
-- Wire existing demo `package.json` scripts to point `dev` at `src/demo/App.tsx`.
+- Wire existing demo `package.json` scripts to point `dev` at `apps/shell/src/App.tsx`.
 - One simple Playwright-less smoke test is sufficient: a Storybook play function for each schema.
 - Acceptance criteria:
-  - [ ] `npm run dev` loads the dashboard on :5173 with no console errors.
+  - [ ] `pnpm nx dev shell` loads the dashboard on :5173 with no console errors.
   - [ ] `SchemaPicker` dropdown lists at least 4 schemas: signup, profile, survey, contact.
   - [ ] Switching schemas in the picker remounts the form and resets to the new schema's defaults.
   - [ ] `StatePreview` renders valid JSON of `handle.values` and updates on every keystroke (verified manually and via a play function).
@@ -969,7 +1185,7 @@ Skip this phase if the app is already on React 19 + MUI v9.
   - [ ] Each schema has a Storybook play function that fills a valid submission and asserts `onSubmit` fired with the right shape.
   - [ ] No engine toggle is present (must ship in Phase 12, not earlier).
   - [ ] The demo page is accessible: keyboard-only navigation reaches every interactive element, tab order is logical, focus visible.
-- PR contents: `src/demo/App.tsx`, `src/demo/pages/Dashboard.tsx`, `src/demo/components/SchemaPicker.tsx`, `src/demo/components/StatePreview.tsx`, `src/demo/components/ValidationPanel.tsx`, `contact.schema.ts`, `vite.config.ts` + `package.json` script wiring.
+- PR contents: `apps/shell/src/App.tsx`, `apps/shell/src/pages/Dashboard.tsx`, `apps/shell/src/components/SchemaPicker.tsx`, `apps/shell/src/components/StatePreview.tsx`, `apps/shell/src/components/ValidationPanel.tsx`, `contact.schema.ts`, `vite.config.ts` + `package.json` script wiring.
 
 ### Phase 9 -- Polish, quickstart, and v1 docs
 
@@ -992,7 +1208,7 @@ Skip this phase if the app is already on React 19 + MUI v9.
   - [ ] Storybook Docs tab is populated for every field (props table + working Controls + one "Try it" example).
   - [ ] All Appendix A.8 sanity checks pass.
   - [ ] Volunteer test: a new engineer (not the plan author) can build the contact form from the quickstart in under 10 minutes, without asking questions outside the docs.
-- PR contents: `src/framework/renderer/FieldErrorBoundary.tsx`, form-level error wiring in `SchemaForm.tsx`, `docs/schema-forms-quickstart.md`, `docs/schema-forms-cookbook.md`, JSDoc additions on public-API files, no behavior changes beyond error handling.
+- PR contents: `libs/shared/schema-forms/src/framework/renderer/FieldErrorBoundary.tsx`, form-level error wiring in `SchemaForm.tsx`, `docs/schema-forms-quickstart.md`, `docs/schema-forms-cookbook.md`, JSDoc additions on public-API files, no behavior changes beyond error handling.
 
 ### Phase 10 -- Nx library promotion (optional timing)
 
@@ -1017,8 +1233,8 @@ Skip this phase if the app is already on React 19 + MUI v9.
 
 - Entry gate: Phase 5 and Phase 6 merged. (Phase 10 not required.)
 - Reintroduce `FormHandle.capabilities` in the engine types.
-- Implement `src/framework/engines/rhf/RHFEngine.ts` + `useRHFForm.ts` against the same interface.
-- Build `src/framework/engines/__tests__/parity.test.ts`:
+- Implement `libs/shared/schema-forms/src/framework/engines/rhf/RHFEngine.ts` + `useRHFForm.ts` against the same interface.
+- Build `libs/shared/schema-forms/src/framework/engines/__tests__/parity.test.ts`:
   ```ts
   describe.each(['tanstack', 'rhf'] as const)('engine parity: %s', (name) => {
     it('runs Zod validators per-field', …)
@@ -1053,16 +1269,17 @@ Skip this phase if the app is already on React 19 + MUI v9.
   - [ ] Editing in either form in `/compare` syncs the JSON preview; the other form does *not* auto-update (demo shows independent engines, not shared state).
   - [ ] Storybook play function `SchemaForm/SwitchingEngines` fills `email`, toggles engine, asserts email still present, no crash.
   - [ ] a11y addon clean on the dashboard with the new `EngineToggle` control (has accessible label).
-- PR contents: `src/framework/engines/switcher.ts`, `src/demo/components/EngineToggle.tsx`, `src/demo/pages/Comparison.tsx`, new route in `App.tsx`, one new Storybook story.
+- PR contents: `libs/shared/schema-forms/src/framework/engines/switcher.ts`, `apps/shell/src/components/EngineToggle.tsx`, `apps/shell/src/pages/Comparison.tsx`, new route in `App.tsx`, one new Storybook story.
 
 ### Phase 13 -- Advanced meta (v1.1)
 
 *Outcome:* async validation, conditional fields, and hidden/readonly fields are first-class.
 
 - Entry gate: Phase 6 merged. (Phase 11 not required; these features work with TanStack-only.)
+- **Refactor first:** Before adding new features, decompose `compile()` into explicit passes as described in Section 4.3. The `SchemaNode[]` intermediate from Phase 2 makes this mechanical: extract `walkSchema()`, `extractFields()`, `buildLayout()`, `buildValidators()`, `extractDefaults()` as separate functions. Add `assembleDependencyGraph()` as the new pass for `dependsOn` cycle detection. All existing Phase 2 tests must pass unchanged after the refactor — do this in a dedicated commit before the feature commits.
 - Extend `FieldMeta` with `asyncValidate`, `dependsOn`, `hidden`, `readOnly`, `clearOnHide`.
 - Implement the async validator registry (named validators referenced by string so schemas stay JSON-safe).
-- Implement `dependsOn` via a re-render hook that subscribes to specific paths.
+- Implement `dependsOn` via `assembleDependencyGraph()` (compile-time cycle detection) + a runtime re-render hook that subscribes to specific paths.
 - Implement hidden/readonly behavior in `FieldRenderer`.
 - Add cookbook examples for each.
 - Acceptance criteria:
@@ -1110,9 +1327,10 @@ Project managers can track v1 completion as "Phases -1 through 9 green". Phase 1
 |------|------------|
 | TanStack Form API churn (pre-1.0 when adopted) | Pin to a specific minor; wrap every API call inside `TanStackEngine` so upgrades touch one file. |
 | RHF `resolver` validation granularity differs from TanStack's per-field model | Engine adapter re-parses `spec.validators.byField[path]` manually on change; contract tests enforce parity. |
-| Zod metadata lost through transforms (`.optional()`, `.default()`, etc.) | Use `.describe()` JSON envelope which survives all Zod combinators; contract test each combinator. |
+| Zod metadata lost through transforms (`.optional()`, `.default()`, etc.) | Dual-storage: `WeakMap` side-channel (primary, authoritative) + `.describe()` JSON envelope (fallback for combinator survival). `getMeta()` checks both. Contract test each combinator through both paths. |
+| External tooling overwrites `.describe()` (e.g. `zodToJsonSchema`, OpenAPI generators) | `WeakMap` is the primary source of truth and is invisible to other tools; `.describe()` is only a fallback. Contract test: overwrite `.describe()`, assert `getMeta()` still returns correct meta from WeakMap. |
 | Infinite render loops from `dependsOn` | Compile a static dependency graph, detect cycles at compile time, fail with `CompileError`. |
-| `useFieldArray` vs TanStack array semantics differ | Normalize through `FormHandle.arrayOps` capability; fallback path uses `reset(nextValues)`. |
+| `useFieldArray` vs TanStack array semantics differ | Normalize through `FormHandle.arrayOps` capability with stable key management (adapter-maintained `Map<string, string[]>`). Fallback `reset(nextValues)` path still maintains keys; dev-mode warning emitted for arrays > 50 items on the fallback path. Contract tests assert key stability across push/remove/move for **both** engines. |
 | Engine switch loses ref / focus state | Document that focus is not preserved; focus the first invalid field on switch to give a sensible UX. |
 | Bundle bloat from shipping both engines | Engines are imported from `engines/tanstack/*` and `engines/rhf/*` behind a dynamic `import()` inside `useEngine`, so only the active engine ships in the primary chunk. |
 | Schema meta schema drift (author writes wrong meta) | `ui()` validates meta against an internal Zod schema at authoring time in dev (`process.env.NODE_ENV !== 'production'`). |
@@ -1123,14 +1341,13 @@ Project managers can track v1 completion as "Phases -1 through 9 green". Phase 1
 
 None blocking. Decisions assumed in this plan:
 
-- **Primary stack = React 19 + MUI v9 + TanStack Form + Zod v3.** Downlevel MUI v6/v7 + React 18 consumers supported via peer-dep ranges (Appendix C).
-- **Phase -1 upgrades the consuming app to React 19 + MUI v9** before Phase 0 of the framework build. Skip if already on that stack.
+- **Primary stack = React 18 + MUI v7 + design tokens + TanStack Form + Zod v3.** Design tokens live in `libs/shared/tokens/` and are bridged into the MUI theme.
+- **Phase -1 is complete** -- the repo is an Nx monorepo with React 18 + Storybook 10 + pnpm. MUI install + theme wiring is part of Phase 0.
 - **Default form engine = TanStack** (per user preference).
 - **Zod v3** (v4 tracked; upgrade path is a one-line adapter change).
-- **MUI Grid v2** for layout.
-- **CSS Modules** are *not* used inside the framework (MUI theme + `sx`) but remain available for custom non-MUI field components per the architecture skill.
+- **MUI v7 + design tokens** for layout and styling. All visual decisions live in `libs/shared/tokens/src/tokens/design-tokens.css` as CSS custom properties and are bridged into the MUI theme via `createTheme({ cssVariables: true })`. Framework field components use MUI primitives + `sx` prop. Non-framework components (atoms, molecules) may continue using CSS Modules.
 - **No router integration** in the framework itself; the demo uses `react-router-dom` v7 already in the repo.
-- **React Compiler is on** (no manual `useMemo` / `useCallback` / `React.memo` inside the framework).
+- **Use `useMemo` / `useCallback` / `React.memo` sparingly** -- only where profiling shows a real performance need (React Compiler is not available on React 18).
 
 ---
 
@@ -1138,18 +1355,18 @@ None blocking. Decisions assumed in this plan:
 
 | Command | Purpose |
 |---------|---------|
-| `npm run dev` | Launch demo dashboard on :5173 |
-| `npm run storybook` | Launch Storybook on :6006 |
-| `npm test` | Run Vitest suite (unit + contract tests) |
-| `npm run build` | Type-check + production build of demo |
-| `npm run build-storybook` | Static Storybook export |
+| `pnpm nx dev shell` | Launch demo dashboard on :5173 |
+| `pnpm run storybook` | Launch Storybook on :6006 |
+| `pnpm test` | Run Vitest suite (unit + contract tests) |
+| `pnpm nx run-many -t build` | Type-check + production build of demo |
+| `pnpm run build-storybook` | Static Storybook export |
 
 ---
 
 ## 18. Tree of Deliverables (Cheat Sheet)
 
 ```
-framework/
+libs/shared/schema-forms/src/framework/
   core/                    ← compile, meta, registry, types, errors
   engines/
     tanstack/              ← primary
@@ -1167,7 +1384,7 @@ framework/
 
 contracts/                 ← consumer-authored schemas (4 demo schemas)
 
-demo/                      ← dashboard (comparison page ships in v1.1)
+apps/shell/src/            ← dashboard (comparison page ships in v1.1)
 ```
 
 This is the complete plan. Execution follows the phases in Section 13; every phase ends with runnable artifacts and green tests, so progress is observable without a final big-bang integration.
@@ -1332,7 +1549,7 @@ MSW (Mock Service Worker) lets us develop forms against realistic API responses 
 
 ### 20.1 What MSW covers in this project
 
-- **Dev server** -- `npm run dev` starts the app against mocked endpoints until the real backend is available.
+- **Dev server** -- `pnpm nx dev shell` starts the app against mocked endpoints until the real backend is available.
 - **Storybook** -- every form story renders with its own handler set, so edge cases (server errors, slow responses, validation failures) are single-click reproducible.
 - **Vitest** -- unit and integration tests use the same handlers as Storybook, guaranteeing parity.
 
@@ -1371,7 +1588,7 @@ Keep handlers **per domain**, not per story. Per-story overrides go in the story
 This is the key move: the mock parses the request body with the **same Zod schema the form uses**. If the form's validation passes but the mock rejects, we know the schema is incomplete (or the form is skipping a rule). If both accept, we have full-stack confidence from the schema alone.
 
 ```ts
-// src/mocks/handlers/users.ts
+// apps/shell/src/mocks/handlers/users.ts
 import { http, HttpResponse } from 'msw'
 import { z } from 'zod'
 import { CreateUserSchema } from '@ibc/shared/data-access/schemas/user'
@@ -1415,7 +1632,7 @@ export const userHandlers = [
 ### 20.5 RFC 9457 helper
 
 ```ts
-// src/mocks/helpers/problemJson.ts
+// apps/shell/src/mocks/helpers/problemJson.ts
 import { HttpResponse } from 'msw'
 import type { ZodError } from 'zod'
 
@@ -1447,7 +1664,7 @@ export function fieldErrors(error: ZodError) {
 For GET endpoints, seed data from the schema rather than hand-rolling objects. This keeps mocks in sync when the schema changes.
 
 ```ts
-// src/mocks/helpers/fromZodSchema.ts
+// apps/shell/src/mocks/helpers/fromZodSchema.ts
 import { z } from 'zod'
 import { generateMock } from '@anatine/zod-mock'   // npm install -D @anatine/zod-mock
 
@@ -1457,7 +1674,7 @@ export function seedFrom<T extends z.ZodTypeAny>(schema: T, count = 1): z.infer<
 ```
 
 ```ts
-// src/mocks/handlers/users.ts
+// apps/shell/src/mocks/handlers/users.ts
 import { UserSchema } from '@ibc/shared/data-access/schemas/user'
 import { seedFrom } from '../helpers/fromZodSchema'
 
@@ -1471,7 +1688,7 @@ http.get('/api/users', () => HttpResponse.json(SEED_USERS))
 For Storybook stories that need a specific backend state (empty list, server error, slow response), override handlers via `parameters.msw`:
 
 ```tsx
-// src/framework/renderer/SchemaForm.stories.tsx
+// libs/shared/schema-forms/src/framework/renderer/SchemaForm.stories.tsx
 export const ShowsServerValidationError: Story = {
   args: { schema: SignupSchema, onSubmit: realSubmit },
   parameters: {
@@ -1501,7 +1718,7 @@ This is the canonical way to prove each edge case in Section 8 without a real ba
 ### 20.8 Dev and Storybook wiring
 
 ```ts
-// src/mocks/browser.ts
+// apps/shell/src/mocks/browser.ts
 import { setupWorker } from 'msw/browser'
 import { userHandlers } from './handlers/users'
 import { authHandlers } from './handlers/auth'
@@ -1540,7 +1757,7 @@ export default preview
 
 ```ts
 // vitest.setup.ts
-import { server } from './src/mocks/server'
+import { server } from './apps/shell/src/mocks/server'
 
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }))  // loud in tests
 afterEach(() => server.resetHandlers())
@@ -1561,7 +1778,7 @@ Every new form ships with Storybook stories covering these five states, each bac
 | **Network / 500** | `ErrorBoundary` or retry surfaces | `HttpResponse.error()` or `problemJson(500, …)` |
 | **Slow response** | Submit button shows loading; double-submit prevented | `await delay(2000)` before response |
 
-Put a story per state in every form's `*.stories.tsx` file. Phase 6's exit gate should require these five; the template can live in `src/framework/testing/mockSchemas.ts`.
+Put a story per state in every form's `*.stories.tsx` file. Phase 6's exit gate should require these five; the template can live in `libs/shared/schema-forms/src/framework/testing/mockSchemas.ts`.
 
 ### 20.10 When the real backend arrives
 
@@ -1595,7 +1812,7 @@ Honestly, yes -- in specific places:
 | Max-depth compile error (`depth > 5`) | **Keep but simplify.** It's a few lines and it prevents a confusing failure mode. | Throw a plain `Error` with the offending path; skip the custom `CompileError` class. |
 | Granular `exports` map, no barrels | **Keep.** Tree-shaking matters even in v1. | No change. |
 | Compiled IR (`FormSpec`) | **Keep, but hide.** It is the thing that makes engine-agnosticism actually work. | Keep it internal. No consumer code imports `FormSpec`; they pass a Zod schema and get a form. |
-| Field registry | **Keep.** This is the extension point juniors and seniors both need. | Ship a narrow default registry (10 field types). Override via one prop. |
+| Field registry | **Keep.** This is the extension point juniors and seniors both need. | Ship a narrow default registry (11 field types). Override via one prop. |
 | Layout DSL (`LayoutNode`) with rows/sections/dividers | **Keep, but make optional.** 95% of forms need no layout authoring -- just `col` per field. | Default layout = one row per field, responsive from `col`. Only authors who want sections or custom grids reach for `LayoutNode`. |
 | `ui()` meta with `autoComplete`, `hidden`, `readOnly`, `componentProps`, etc. | **Keep, but start small.** Ship the minimum first; extend on demand. | v1 meta = `type`, `label`, `helperText`, `placeholder`, `options`, `col`. Add the rest as real schemas request them. |
 
@@ -1651,6 +1868,7 @@ Advanced knobs exist but stay opt-in. A junior only meets them when the task act
 | Brand your own Input across the app | Registry override | `<SchemaForm registry={defaultRegistry.extend({ text: OurInput })} … />` |
 | Two fields side-by-side on desktop | `col` per field | `col: { xs: 12, md: 6 }` |
 | Sections, dividers, or custom grouping | Author a `LayoutNode` | Covered in Section 6.1; not needed for typical forms |
+| Tabs, accordion, or custom wrapper | `kind: 'custom'` layout node + `LayoutRegistry` | Register a component, reference by name in layout. See Section 6.1 |
 | Async uniqueness check | `asyncValidate` in meta | `ui(z.string().email(), { label: 'Email', asyncValidate: 'checkEmail' })` |
 | Conditional field | `dependsOn` + Zod `discriminatedUnion` | Covered in Section 10.2's billing example |
 | Array of repeating items | Nothing extra -- `z.array(z.object(…))` just works | `ArrayField` handles it by default |
@@ -1717,7 +1935,7 @@ Taking the trims above, v1 ships:
 - Core: `compile()`, `ui()`, `FieldRegistry`, `FallbackField`, errors.
 - Engine: **TanStack Form only**. `FormEngine` interface present; second adapter deferred.
 - Renderer: `SchemaForm`, `LayoutRenderer` (default layout for 95% of forms), `FieldRenderer`.
-- Fields: `TextField`, `NumberField`, `SelectField`, `CheckboxField`, `SwitchField`, `RadioGroupField`, `DateField`, `TextareaField`, `ObjectField`, `ArrayField`.
+- Fields: `TextField`, `NumberField`, `SelectField`, `CheckboxField`, `SwitchField`, `RadioGroupField`, `DateField`, `TextareaField`, `FileUploadField`, `ObjectField`, `ArrayField`.
 - Meta: `type`, `label`, `helperText`, `placeholder`, `options`, `col`, `componentProps`.
 - Demo: one dashboard page with four schemas, a `StatePreview` JSON panel, and a `ValidationPanel`. **No engine toggle in v1.**
 - Docs: quickstart + cookbook + JSDoc + Storybook autodocs.
@@ -1860,7 +2078,7 @@ Per Section 1 of the architecture skill, expose specific entry points instead of
   "peerDependencies": {
     "react": "^18.0.0",
     "react-dom": "^18.0.0",
-    "@mui/material": "^6.0.0",
+    "@mui/material": "^7.0.0",
     "@emotion/react": "^11.0.0",
     "@emotion/styled": "^11.0.0",
     "zod": "^3.22.0"
@@ -1976,10 +2194,10 @@ If Phase 0-8 of Section 13 have already been executed in the current single-pack
 
 1. `npx create-nx-workspace@latest ibc --preset=apps` in a sibling directory.
 2. `nx g @nx/react:library libs/ibc/schema-forms --importPath=@ibc/schema-forms --buildable --bundler=vite --unitTestRunner=vitest --tags=type:ui,scope:shared --component=false`.
-3. Move `src/framework/*` → `libs/ibc/schema-forms/src/lib/*` (one-to-one; no restructuring required).
+3. Move `libs/shared/schema-forms/src/framework/*` → `libs/ibc/schema-forms/src/lib/*` (one-to-one; no restructuring required).
 4. Update relative imports: inside the lib use relative paths; across libs use `@ibc/*` path aliases from `tsconfig.base.json`.
-5. Copy `src/framework/*.stories.tsx` in place; wire the library Storybook from Section A.6.
-6. Port `src/demo/*` to `apps/demo/src/` (or fold into `apps/shell` as a showcase route).
+5. Copy `libs/shared/schema-forms/src/framework/*.stories.tsx` in place; wire the library Storybook from Section A.6.
+6. Port `apps/shell/src/*` to `apps/demo/src/` (or fold into `apps/shell` as a showcase route).
 7. Convert the `SignupSchema` / `ProfileSchema` etc. to live in `libs/shared/data-access/schemas/` so both forms and APIs consume them.
 8. Update `package.json` exports per Section A.4.
 9. Add tags + boundary constraints; run `nx lint` and fix violations until clean.
@@ -1999,87 +2217,65 @@ Because the single-package scaffold mirrors the lib's internal folder layout (co
 
 ---
 
-## Appendix C -- MUI v9 as the v1 Target (React 19)
+## Appendix C -- MUI v7 as the v1 Target (React 18)
 
-Short answer: **yes, upgrade to MUI v9 first, then build the framework on top.** Because the consuming app is already on React 19, starting on v6/v7 would mean shipping v1 on a stack the app is about to move off of, then running a migration immediately. That is the worst of both worlds. MUI v9 is the correct v1 target; v6/v7 become *downlevel compatibility* targets, not the primary.
+Short answer: **MUI v7 is the correct v1 target.** The consuming app is on React 18; MUI v7 is the latest major that fully supports React 18. MUI v9 targets React 19 and can be adopted when/if the app moves to React 19. Design tokens from `libs/shared/tokens/` are bridged into the MUI theme via `createTheme({ cssVariables: true })`.
 
-This appendix replaces my earlier framing. The earlier draft assumed v1 shipped on v6 and upgraded later -- that assumption is wrong for a greenfield library on React 19.
+### C.0 Why v7 on React 18
 
-### C.0 Why v9 first on React 19
+Three concrete reasons:
 
-Three concrete reasons the upgrade-first order is correct here:
+1. **MUI v7 is the latest stable major supporting React 18.** MUI v9 (April 2026) targets React 19 as its primary React line. Since we are on React 18, v7 gives us the newest features without a React major upgrade.
+2. **`forwardRef` is still the standard pattern on React 18.** Field components use `forwardRef` for ref passing. When React 19 is adopted, this can be simplified to plain `ref` props.
+3. **`cssVariables: true` is supported in v7.** Our theme bridge from design tokens works identically on v7 and v9. The `cssVariables` flag was introduced in v6.
 
-1. **React 19 + MUI v6/v7 is a supported but transitional pairing.** MUI v9 re-syncs its major with MUI X v9 and targets React 19 as the primary React line. The v9 release explicitly positions Base UI primitives (`NumberField`, `Menubar`) for adoption on React 19; v7 supports React 19 but carries deprecated props the v9 cycle removes.
-2. **React 19's Compiler (React Forget) is stable.** Writing the framework on React 19 means no manual `useMemo` / `useCallback` / `React.memo` in field components, in the engine adapters, or in the renderer. Starting on React 18 + MUI v6 and later migrating would mean two rounds of memoization cleanup.
-3. **`ref` is a regular prop in React 19.** Every field component in Phase 4 (and consumer-authored custom fields) can accept `ref?: React.Ref<HTMLElement>` directly without `forwardRef`. If we ship v1 on React 18, we ship `forwardRef` boilerplate that we strip out a month later. Doing it right the first time avoids a breaking API change for consumers who reach into refs.
+Starting on v7 means we get:
 
-Starting on v9 also means we get the free wins immediately instead of as a migration:
+- `slots` + `slotProps` API (the modern replacement for `component`/`componentsProps`).
+- `cssVariables: true` for CSS custom property integration with our design tokens.
+- Grid v2 (`size={{ xs, sm, md, lg, xl }}`) for responsive layouts.
+- Full `sx` prop support for one-off styling.
 
-- `sx` prop 30% faster under heavy usage -- relevant because our layout renderer composes many `sx` values.
-- `cssVariables: true` with `color-mix()` derived colors -- used by our theme bridge from day one.
-- New Base UI `NumberField` primitive -- our default `NumberField` wraps it instead of a `TextField type="number"` workaround.
-- Improved Roving TabIndex on Stepper / Tabs / MenuList -- `SelectField` and `RadioGroupField` inherit the a11y improvements automatically.
-- ~3% smaller bundle vs. v7.
+### C.1 What this means for the framework
 
-### C.1 What MUI v9 actually ships (the parts that touch this framework)
-
-MUI v9 (released April 8, 2026, re-synchronized with MUI X v9) is primarily a polish + breaking-deprecation release. The items that intersect our design:
-
-| v9 change | Impact on schema-forms |
+| Concern | On MUI v7 + React 18 |
 |---|---|
-| Removal of deprecated `component` and `componentsProps` props across the library | Low. Our field wrappers don't use these -- they use `slots` + `slotProps` or the `as` prop on polymorphic helpers. Audit needed in Phase 4 review. |
-| Removal of deprecated system props from layout components | Low. We use Grid v2 (`size={…}`) and `sx`, both supported. |
-| `disableEscapeKeyDown` removed from `Dialog` / `Modal` | None. Framework doesn't own Dialog/Modal; if consumers wrap us in one, it's their call. |
-| New `NumberField` primitive from Base UI | **Opportunity**. When on v9, our default `NumberField` should wrap MUI's new `NumberField` (better a11y + keyboard handling). v6/v7 path keeps using our `TextField type="number"` wrapper. |
-| New `Menubar` | Not used by the framework. Available to consumers if they build custom page chrome. |
-| CSS variables + `color-mix()` derived colors | Neutral-positive. Our theme bridge already enables `cssVariables: true`; derived colors work automatically when consumers upgrade. |
-| `TableCell` border `color-mix` + `nativeColor` + `cssVariables` interaction fix | None for the framework itself. |
-| Autocomplete `root` slot + full slots for indicators | Positive. If we ever add a combobox field, we'll use the new slot API. Not in v1 scope. |
-| Roving TabIndex across Stepper / Tabs / MenuList | Positive. Our `SelectField` and `RadioGroupField` benefit automatically. |
-| `aria-hidden` removed from `Backdrop` by default | None for the framework. |
-| Theme typing: `MuiTouchRipple` removed | Check theme augmentation in `tokens/mui-theme.ts`; we don't override `MuiTouchRipple` so we are clean. |
-| Bundle size ~3% smaller; `sx` up to 30% faster in heavy usage | Free win. |
-| Future: Emotion dependency will be removed ("What's next" section of v9 blog) | **Track**. When Emotion is dropped in a post-v9 minor, our install instructions change (drop `@emotion/react`, `@emotion/styled` peer deps). Non-breaking to our API. |
+| Default field components | Wrap MUI v7 primitives (`TextField`, `Select`, `Checkbox`, etc.) |
+| `NumberField` | `TextField type="number"` (Base UI `NumberField` primitive is a v9+ feature) |
+| Layout | MUI Grid v2 + `sx` prop |
+| Theme bridge | `createTheme({ cssVariables: true })` bridges design tokens from `libs/shared/tokens/` |
+| `ref` in field components | `forwardRef` pattern (standard for React 18) |
+| Memoization | Manual `useMemo`/`useCallback` where profiling shows need (React Compiler is React 19+) |
 
-Nothing in v9 changes the mental model or the public API of `SchemaForm`, `ui()`, or the field registry. It's our field-component internals + peer-dep declarations that move.
-
-### C.2 Why the design absorbs this cleanly
+### C.2 Why the design absorbs MUI version changes cleanly
 
 Three choices in Sections 5-7 make version churn absorbable:
 
-1. **We don't re-export MUI components.** Every default field is a *wrapper* around MUI primitives. Consumers import `TextField` from `@ibc/schema-forms/fields`, not `@mui/material`. A major MUI bump touches ~10 files in `src/framework/fields/*`, not the consuming app's 400 call-sites.
-2. **Styling is theme + `sx`, never `@mui/system` layout props.** The deprecated system layout props (the thing v9 removes) are not used anywhere in the framework. Consumers who follow the skill's rules are also safe.
-3. **The `FieldBinding` contract is MUI-free.** `{ value, onChange, onBlur, error, name }` is a plain shape. Swapping the rendering layer (for example, replacing MUI with Joy or Base UI directly in v1.2) doesn't touch the engine adapters, the compile step, or the registry.
+1. **We don't re-export MUI components.** Every default field is a *wrapper* around MUI primitives. Consumers import `TextField` from `@ibc/schema-forms/fields`, not `@mui/material`. A major MUI bump touches ~10 files in `libs/shared/schema-forms/src/framework/fields/*`, not the consuming app's call-sites.
+2. **Styling is theme + `sx`, never deprecated `@mui/system` layout props.** Grid v2 and `sx` are the long-term MUI API. Safe across v7 → v9.
+3. **The `FieldBinding` contract is MUI-free.** `{ value, onChange, onBlur, error, touched, dirty, isValidating, name }` is a plain shape. Swapping the rendering layer doesn't touch the engine adapters, the compile step, or the registry.
 
 ### C.3 Version matrix
 
-Commit to supporting a window, not a point release. Primary target is the leftmost column:
-
 | MUI line | React | Zod | TanStack Form | Framework status |
 |---|---|---|---|---|
-| **v9.x** | **19.x** | **3.x** (4.x tracked) | **1.x** | **v1 primary target.** Ships here. Uses Base UI `NumberField`, `cssVariables` + `color-mix()`, Roving TabIndex a11y wins. |
-| v7.x | 18.x or 19.x | 3.x | 1.x | **Downlevel supported** via peer-dep ranges. No new features; Base UI `NumberField` falls back to `TextField type="number"`. |
+| **v7.x** | **18.x** | **3.x** (4.x tracked) | **1.x** | **v1 primary target.** Ships here. Uses Grid v2, `cssVariables`, `slots`+`slotProps`. |
+| v9.x | 19.x | 3.x | 1.x | **Future upgrade path.** Unlocks Base UI `NumberField`, `color-mix()` derived colors, React Compiler, ~3% smaller bundle. |
 | v6.x | 18.x | 3.x | 0.x - 1.x | Best-effort downlevel. Not tested in CI. |
 
-v8 is skipped -- MUI itself did (v7 → v9 to align with MUI X). The React 18 → React 19 move is *already behind us* for the consuming app, so v1 targets React 19 as the primary React line.
-
-### C.4 Peer-dep declaration (primary = v9, downlevel tolerated)
-
-In `libs/ibc/schema-forms/package.json` (Appendix B.4), widen ranges so downlevel v6/v7 consumers can still install, while the primary development and CI target is v9 + React 19:
+### C.4 Peer-dep declaration
 
 ```jsonc
 {
   "peerDependencies": {
-    "react":            ">=18.0.0 <20.0.0",
-    "react-dom":        ">=18.0.0 <20.0.0",
+    "react":            "^18.0.0",
+    "react-dom":        "^18.0.0",
     "@mui/material":    ">=6.0.0 <10.0.0",
-    "@emotion/react":   ">=11.0.0 <13.0.0",
-    "@emotion/styled":  ">=11.0.0 <13.0.0",
+    "@emotion/react":   "^11.0.0",
+    "@emotion/styled":  "^11.0.0",
     "zod":              ">=3.22.0 <5.0.0"
   },
   "peerDependenciesMeta": {
-    "@emotion/react":   { "optional": true },
-    "@emotion/styled":  { "optional": true },
     "@tanstack/react-form":       { "optional": true },
     "@tanstack/zod-form-adapter": { "optional": true },
     "react-hook-form":            { "optional": true },
@@ -2088,70 +2284,50 @@ In `libs/ibc/schema-forms/package.json` (Appendix B.4), widen ranges so downleve
 }
 ```
 
-Emotion is optional in the v9+ world (MUI has signaled it will remove the hard dependency in a post-v9 minor). On v6/v7 installs npm will warn if it's missing -- that is the correct behavior because on v6/v7 Emotion is still required.
-
-**Dev dependencies in the library** resolve to the primary line so we develop, test, and build Storybook against v9 + React 19:
+**Dev dependencies in the library** resolve to the primary line so we develop, test, and build Storybook against v7 + React 18:
 
 ```jsonc
 {
   "devDependencies": {
-    "react":            "^19.0.0",
-    "react-dom":        "^19.0.0",
-    "@mui/material":    "^9.0.0",
-    "@mui/icons-material": "^9.0.0"
+    "react":               "^18.3.0",
+    "react-dom":           "^18.3.0",
+    "@mui/material":       "^7.0.0",
+    "@mui/icons-material": "^7.0.0"
   }
 }
 ```
 
-### C.5 Pre-Phase 0 upgrade of the consuming app to MUI v9
+### C.5 MUI installation as part of Phase 0
 
-Because v1 targets React 19 + MUI v9, if the app is not already on MUI v9 we do that upgrade **before Phase 0** of Section 13. It is a one-PR operation and it unblocks the entire schema-forms plan.
+MUI is not currently installed in the repo. Installation is part of Phase 0 (Foundations), not a separate phase:
 
-Order of operations (treat as a Phase -1):
+```bash
+pnpm add @mui/material@^7 @mui/icons-material@^7 @emotion/react@^11 @emotion/styled@^11
+```
 
-- [ ] Bump the app: `npm install @mui/material@^9 @mui/icons-material@^9 @mui/system@^9`.
-- [ ] Run MUI's codemod preset across the app: `npx @mui/codemod@latest v9.0.0/preset-safe src/`.
-- [ ] Grep `src/**` for `component=` / `componentsProps=` on MUI components -- replace with `slots` + `slotProps`.
-- [ ] Grep `src/**` for deprecated system layout props applied directly to `<Box>` / `<Grid>` (`display=`, `alignItems=`, `justifyContent=`, etc.). Move to `sx`.
-- [ ] Remove `disableEscapeKeyDown` from any `Dialog` / `Modal` usage; implement equivalent via keyboard handling if needed.
-- [ ] Audit the MUI theme file: remove any `MuiTouchRipple` theme overrides (the component type is gone in v9).
-- [ ] Ensure `createTheme({ cssVariables: true })` is enabled so derived `color-mix()` colors work.
-- [ ] Run the existing Storybook + a11y addon across every story. Zero new violations.
-- [ ] Run Vitest. All snapshots match or are intentionally updated.
-- [ ] Bump React to 19 if not already there (`react@^19 react-dom@^19`). React 19 types are stricter; address `forwardRef`-deprecation warnings by moving to plain `ref` props.
-- [ ] Install the React Compiler Babel plugin per the skill's Section 16: `npm install -D babel-plugin-react-compiler` and wire into `vite.config.ts`.
+Then:
+- Create `libs/shared/schema-forms/src/framework/tokens/mui-theme.ts` bridging `libs/shared/tokens/src/tokens/design-tokens.css` into `createTheme({ cssVariables: true, colorSchemes: { light, dark } })`.
+- Wrap the app with `<ThemeProvider theme={theme}><CssBaseline />…</ThemeProvider>`.
+- Wrap Storybook via `.storybook/preview.ts` using `withThemeFromJSXProvider`.
 
-Expected size: a few files + a codemod pass, not a redesign. The existing tests are the safety net.
+### C.6 Future upgrade path to MUI v9 + React 19
 
-### C.5a Downlevel compatibility surface (v6/v7 + React 18 consumers)
+When the app is ready to move to React 19, the upgrade path is:
 
-If a downstream consumer is stuck on v6/v7 + React 18, the library still installs (peer ranges are wide), but three things are conditional:
+1. Bump React: `pnpm add react@^19 react-dom@^19`.
+2. Remove `forwardRef` wrappers from field components (React 19 makes `ref` a regular prop).
+3. Install React Compiler: `pnpm add -D babel-plugin-react-compiler` → remove manual memoization.
+4. Bump MUI: `pnpm add @mui/material@^9 @mui/icons-material@^9`.
+5. Run MUI codemod: `npx @mui/codemod@latest v9.0.0/preset-safe libs/`.
+6. Swap `NumberField` to wrap Base UI `NumberField` primitive (better a11y + keyboard handling).
+7. Remove `MuiTouchRipple` theme overrides if any.
 
-| Feature | On v9 + React 19 | On v6/v7 + React 18 |
-|---|---|---|
-| Default `NumberField` | Wraps MUI v9's Base UI `NumberField` | Falls back to `TextField type="number"` |
-| `cssVariables: true` + `color-mix()` derived colors | Native | Polyfilled via CSS custom properties, no `color-mix()` derived hues |
-| `ref` in field components | Regular prop | Still a regular prop (no `forwardRef` wrapper needed at consumer) |
-| React Compiler memoization | Active | Inactive; consumer code runs un-optimized memoization |
-
-The field wrapper in `fields/NumberField/NumberField.tsx` selects the implementation at import time via a dynamic check on the installed `@mui/material` version (read from `@mui/material/version` or fall back to feature detection). No consumer code changes to benefit from the v9 path.
-
-### C.6 Where the plan would have to change if MUI v9 had been a bigger break
-
-For completeness, here's what *would* have forced a design change -- none of which happened:
-
-- If MUI had dropped CSS variables support → our theme bridge (Section 5) would need rewrite. **It didn't; variables are now the preferred path.**
-- If Grid v2 had been deprecated → `LayoutRenderer` would need to migrate to `Stack` + manual breakpoints. **It wasn't.**
-- If the `sx` prop had been removed → our per-field `componentProps` would lose its main escape hatch. **It wasn't; sx got 30% faster.**
-- If MUI had adopted a different React form-control signature → our `FieldBinding` adapter in each field wrapper would need updates. **It didn't.**
-
-The design absorbs MUI v9 because the v9 release is evolutionary. If a future major were revolutionary, the affected surface is still limited to `src/framework/fields/*` and `tokens/mui-theme.ts` -- engines, compile, registry, renderer, and the public API stay fixed.
+The framework's public API does not change with this upgrade. Consumer call-sites are isolated by our field wrappers.
 
 ### C.7 Summary
 
-- **v1 targets MUI v9 + React 19.** This is the correct primary when the consuming app is already on React 19.
-- **Upgrade the app to MUI v9 as Phase -1**, before the framework's Phase 0. Single PR, guarded by the existing test suite.
-- **v6/v7 consumers still install and run** via wide peer ranges; the `NumberField` wrapper transparently falls back to `TextField type="number"`.
-- **The framework's public API does not change with MUI version.** Consumers' call-sites are isolated by our field wrappers, so downstream projects on older MUI still get the same `SchemaForm` API.
-- **React 19 wins land automatically**: React Compiler memoization, `ref` as a regular prop, `use()` hook available for async resources.
-- **MUI v9 wins land automatically**: Base UI `NumberField`, `color-mix()` derived colors, 30% faster `sx`, improved Roving TabIndex on Select/Radio/Stepper/Tabs.
+- **v1 targets MUI v7 + React 18.** This matches the current app stack.
+- **MUI install + theme wiring is part of Phase 0**, not a separate prerequisite phase.
+- **Design tokens bridge into MUI theme** via `createTheme({ cssVariables: true })`.
+- **Future React 19 + MUI v9 upgrade** is additive -- unlocks React Compiler, Base UI `NumberField`, `color-mix()` derived colors, 30% faster `sx`, improved Roving TabIndex.
+- **The framework's public API does not change with MUI version.** Consumer call-sites are isolated by field wrappers.

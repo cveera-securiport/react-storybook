@@ -16,21 +16,18 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true,
-    "baseUrl": ".",
     "paths": {
-      "@ibc/ui": ["libs/shared/ui/src/index.ts"],
-      "@ibc/ui/*": ["libs/shared/ui/src/*"],
-      "@ibc/tokens": ["libs/shared/tokens/src/index.ts"],
-      "@ibc/tokens/*": ["libs/shared/tokens/src/*"],
-      "@ibc/schema-forms": ["libs/shared/schema-forms/src/index.ts"],
-      "@ibc/schema-forms/*": ["libs/shared/schema-forms/src/*"]
+      "@ibc/ui": ["../../libs/shared/ui/src/index.ts"],
+      "@ibc/ui/*": ["../../libs/shared/ui/src/*"],
+      "@ibc/tokens": ["../../libs/shared/tokens/src/index.ts"],
+      "@ibc/tokens/*": ["../../libs/shared/tokens/src/*"],
+      "@ibc/schema-forms": ["../../libs/shared/schema-forms/src/index.ts"],
+      "@ibc/schema-forms/*": ["../../libs/shared/schema-forms/src/*"]
     }
   },
+  "include": ["src", "../../libs/shared/*/src"],
   "references": [
-    { "path": "apps/shell" },
-    { "path": "libs/shared/ui" },
-    { "path": "libs/shared/tokens" },
-    { "path": "libs/shared/schema-forms" }
-  ],
-  "exclude": ["node_modules", "dist"]
+    { "path": "../../libs/shared/ui" },
+    { "path": "../../libs/shared/tokens" }
+  ]
 }

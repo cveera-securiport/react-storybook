@@ -1,6 +1,6 @@
-import type { Preview } from '@storybook/react'
-import '../src/tokens/design-tokens.css'
-import '../src/index.css'
+import type { Preview } from '@storybook/react-vite'
+import '@ibc/tokens/tokens/design-tokens.css'
+import '../apps/shell/src/index.css'
 import theme from './theme'
 
 const preview: Preview = {
