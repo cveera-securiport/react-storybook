@@ -1,9 +1,17 @@
 import type { Preview } from '@storybook/react-vite'
+import { AppThemeProvider } from '@ibc/mui-theme'
 import '@ibc/tokens/tokens/design-tokens.css'
 import '../apps/shell/src/index.css'
 import theme from './theme'
 
 const preview: Preview = {
+  decorators: [
+    (Story) => (
+      <AppThemeProvider>
+        <Story />
+      </AppThemeProvider>
+    ),
+  ],
   parameters: {
     docs: {
       theme,

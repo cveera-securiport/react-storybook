@@ -18,6 +18,12 @@
       "options": {
         "reportsDirectory": "../../../coverage/libs/shared/schema-forms"
       }
+    },
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "eslint libs/shared/schema-forms/src --ext .ts,.tsx"
+      }
     }
   }
 }

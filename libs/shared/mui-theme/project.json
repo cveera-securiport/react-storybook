@@ -1,14 +1,14 @@
 {
-  "name": "tokens",
+  "name": "mui-theme",
   "$schema": "../../../node_modules/nx/schemas/project-schema.json",
-  "sourceRoot": "libs/shared/tokens/src",
+  "sourceRoot": "libs/shared/mui-theme/src",
   "projectType": "library",
-  "tags": ["type:util", "scope:shared"],
+  "tags": ["type:ui", "scope:shared"],
   "targets": {
     "lint": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "eslint libs/shared/tokens/src --ext .ts,.tsx"
+        "command": "eslint libs/shared/mui-theme/src --ext .ts,.tsx"
       }
     }
   }

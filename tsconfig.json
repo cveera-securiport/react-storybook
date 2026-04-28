@@ -22,6 +22,8 @@
       "@ibc/ui/*": ["libs/shared/ui/src/*"],
       "@ibc/tokens": ["libs/shared/tokens/src/index.ts"],
       "@ibc/tokens/*": ["libs/shared/tokens/src/*"],
+      "@ibc/mui-theme": ["libs/shared/mui-theme/src/index.ts"],
+      "@ibc/mui-theme/*": ["libs/shared/mui-theme/src/*"],
       "@ibc/schema-forms": ["libs/shared/schema-forms/src/index.ts"],
       "@ibc/schema-forms/*": ["libs/shared/schema-forms/src/*"]
     }

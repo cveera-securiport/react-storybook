@@ -1,5 +1,8 @@
 import React, { useState } from 'react'
-import styles from './Alert.module.css'
+import MuiAlert from '@mui/material/Alert'
+import AlertTitle from '@mui/material/AlertTitle'
+import IconButton from '@mui/material/IconButton'
+import CloseIcon from '@mui/icons-material/Close'
 
 export interface AlertProps {
   variant?: 'info' | 'success' | 'warning' | 'error'
@@ -20,35 +23,26 @@ export const Alert: React.FC<AlertProps> = ({
 
   if (!visible) return null
 
-  const iconMap = {
-    info: 'ℹ',
-    success: '✓',
-    warning: '⚠',
-    error: '✕',
-  }
-
   const handleDismiss = () => {
     setVisible(false)
     onDismiss?.()
   }
 
   return (
-    <div className={`${styles.alert} ${styles[variant]}`} role="alert">
-      <span className={styles.icon}>{iconMap[variant]}</span>
-      <div className={styles.content}>
-        {title && <div className={styles.title}>{title}</div>}
-        <div className={styles.message}>{message}</div>
-      </div>
-      {dismissible && (
-        <button
-          className={styles.close}
-          onClick={handleDismiss}
-          aria-label="Dismiss alert"
-          type="button"
-        >
-          ✕
-        </button>
-      )}
-    </div>
+    <MuiAlert
+      severity={variant}
+      role="alert"
+      action={
+        dismissible ? (
+          <IconButton aria-label="Dismiss alert" size="small" onClick={handleDismiss}>
+            <CloseIcon fontSize="inherit" />
+          </IconButton>
+        ) : undefined
+      }
+      sx={{ width: '100%' }}
+    >
+      {title ? <AlertTitle>{title}</AlertTitle> : null}
+      {message}
+    </MuiAlert>
   )
 }

@@ -1,5 +1,5 @@
-import React from 'react'
-import styles from './Input.module.css'
+import type React from 'react'
+import TextField from '@mui/material/TextField'
 
 export interface InputProps {
   id?: string
@@ -26,27 +26,37 @@ export const Input: React.FC<InputProps> = ({
   value,
   onChange,
 }) => {
+  const color = state === 'success' ? 'success' : state === 'error' ? 'error' : 'primary'
+  const resolvedSize = size === 'lg' ? 'medium' : size === 'sm' ? 'small' : 'medium'
+
   return (
-    <div className={styles.wrapper}>
-      {label && (
-        <label htmlFor={id} className={styles.label}>
-          {label}
-        </label>
-      )}
-      <input
-        id={id}
-        className={`${styles.input} ${styles[size]} ${state !== 'default' ? styles[state] : ''} ${disabled ? styles.disabled : ''}`}
-        type={type}
-        placeholder={placeholder}
-        disabled={disabled}
-        value={value}
-        onChange={onChange}
-      />
-      {helperText && (
-        <span className={`${styles.helperText} ${state !== 'default' ? styles[state + 'Text'] : ''}`}>
-          {helperText}
-        </span>
-      )}
-    </div>
+    <TextField
+      id={id}
+      label={label}
+      placeholder={placeholder}
+      type={type}
+      size={resolvedSize}
+      color={color}
+      error={state === 'error'}
+      helperText={helperText}
+      disabled={disabled}
+      value={value}
+      onChange={onChange}
+      fullWidth
+      sx={{
+        '& .MuiInputBase-root': {
+          ...(size === 'lg' ? { minHeight: '3rem', fontSize: 'var(--text-lg)' } : {}),
+        },
+      }}
+      InputLabelProps={{
+        htmlFor: id,
+      }}
+      inputProps={{
+        id,
+      }}
+      FormHelperTextProps={{
+        sx: state === 'success' ? { color: 'var(--color-success-600)' } : undefined,
+      }}
+    />
   )
 }

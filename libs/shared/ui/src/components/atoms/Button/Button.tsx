@@ -1,5 +1,7 @@
-import React from 'react'
-import styles from './Button.module.css'
+import type React from 'react'
+import MuiButton from '@mui/material/Button'
+import CircularProgress from '@mui/material/CircularProgress'
+import Stack from '@mui/material/Stack'
 
 export interface ButtonProps
   extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'disabled'> {
@@ -23,28 +25,31 @@ export const Button: React.FC<ButtonProps> = ({
   onClick,
   ...rest
 }) => {
-  const classNames = [
-    styles.button,
-    styles[variant],
-    styles[size],
-    loading ? styles.loading : '',
-    className,
-  ]
-    .filter(Boolean)
-    .join(' ')
+  const muiVariant = variant === 'outline' ? 'outlined' : variant === 'ghost' ? 'text' : 'contained'
+  const muiColor =
+    variant === 'secondary' ? 'secondary' : variant === 'danger' ? 'error' : 'primary'
 
   return (
-    <button
-      type={type}
-      className={classNames}
+    <MuiButton
+      type={type as 'button' | 'submit' | 'reset'}
+      variant={muiVariant}
+      color={muiColor}
+      size={size}
+      className={className}
       disabled={disabled || loading}
       onClick={onClick}
       aria-busy={loading || undefined}
+      startIcon={icon}
       {...rest}
     >
-      {loading && <span className={styles.spinner} aria-hidden />}
-      {icon && <span className={styles.icon}>{icon}</span>}
-      {children}
-    </button>
+      {loading ? (
+        <Stack direction="row" spacing={1} alignItems="center">
+          <CircularProgress size={16} color="inherit" />
+          <span>{children}</span>
+        </Stack>
+      ) : (
+        children
+      )}
+    </MuiButton>
   )
 }
