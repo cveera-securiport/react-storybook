@@ -17,13 +17,7 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true,
     "composite": true,
-    "outDir": "../../../dist/out-tsc",
-    "paths": {
-      "@csv/tokens": ["../tokens/src/index.ts"],
-      "@csv/tokens/*": ["../tokens/src/*"],
-      "@csv/ui": ["../ui/src/index.ts"],
-      "@csv/ui/*": ["../ui/src/*"]
-    }
+    "outDir": "../../../dist/out-tsc"
   },
   "include": ["src"]
 }

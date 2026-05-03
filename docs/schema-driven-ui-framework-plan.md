@@ -657,7 +657,7 @@ These are exported from `libs/shared/schema-forms/src/framework/index.ts`. Break
 | `FormEngine` (type) | Engine adapter interface | Will evolve when RHF adapter lands |
 | `FormHandle` (type) | Engine instance handle | Will gain capabilities when second engine ships |
 
-These are exported from `libs/shared/schema-forms/src/framework/unstable.ts` (separate entry point). Import path: `@ibc/schema-forms/unstable`. JSDoc on each export includes `@unstable` and a note that the API may change in minor versions.
+These are exported from `libs/shared/schema-forms/src/framework/unstable.ts` (separate entry point). Import path: `@csv/schema-forms/unstable`. JSDoc on each export includes `@unstable` and a note that the API may change in minor versions.
 
 **Tier 3 — Internal (NOT exported):**
 
@@ -669,12 +669,12 @@ These are exported from `libs/shared/schema-forms/src/framework/unstable.ts` (se
 | `fields/*` (individual MUI field components) | Registered via `defaultRegistry`; override via registry, not direct import |
 | `core/errors.ts` | Internal error types |
 
-No `index.ts` barrel files exist inside `framework/` subfolders. Import from internal paths (e.g. `@ibc/schema-forms/core/compile`) is blocked by the `exports` map in `package.json` (Appendix B.4).
+No `index.ts` barrel files exist inside `framework/` subfolders. Import from internal paths (e.g. `@csv/schema-forms/core/compile`) is blocked by the `exports` map in `package.json` (Appendix B.4).
 
 **Enforcement:**
 
 - `package.json` `exports` field only exposes `.` and `./unstable`. All other paths resolve to nothing.
-- Phase 0 acceptance criteria: "Import from `@ibc/schema-forms/core/compile` fails with a module-not-found error in a consumer app."
+- Phase 0 acceptance criteria: "Import from `@csv/schema-forms/core/compile` fails with a module-not-found error in a consumer app."
 - The Appendix B checklist item ("fewer than 20 exported names") is refined: Tier 1 ≤ 10 names, Tier 2 ≤ 10 names.
 
 ---
@@ -1212,7 +1212,7 @@ Phases 0-9 in order give a junior dev a shippable v1. Phase 10 (Nx promotion) is
 
 ### Phase 10 -- Nx library promotion (optional timing)
 
-*Outcome:* the framework lives in `libs/ibc/schema-forms/` as an Nx library and consumer apps import from `@ibc/schema-forms`.
+*Outcome:* the framework lives in `libs/ibc/schema-forms/` as an Nx library and consumer apps import from `@csv/schema-forms`.
 
 - Entry gate: Phase 9 merged; team has decided a monorepo promotion is desired.
 - Follow Appendix B steps 1-10 exactly. No code is rewritten; everything is a move or a config addition.
@@ -1221,7 +1221,7 @@ Phases 0-9 in order give a junior dev a shippable v1. Phase 10 (Nx promotion) is
   - [ ] `nx test ibc-schema-forms` runs the unit suite green.
   - [ ] `nx storybook ibc-schema-forms` serves stories on :6007 with a11y addon clean.
   - [ ] `nx lint ibc-schema-forms` passes with module-boundary constraints active.
-  - [ ] A consumer app can `import { SchemaForm, ui } from '@ibc/schema-forms'` with zero barrel imports.
+  - [ ] A consumer app can `import { SchemaForm, ui } from '@csv/schema-forms'` with zero barrel imports.
   - [ ] `nx graph` shows `ibc-schema-forms` as a shared node with no inbound edges from `scope:shell` or `scope:agent` libs.
   - [ ] Every test that passed pre-move still passes post-move.
   - [ ] No behavior changes; `git diff --stat` shows predominantly file renames.
@@ -1485,7 +1485,7 @@ Output: one file per operation with `z.object({ … })` schemas. We then **exten
 ```ts
 // libs/shared/data-access/src/schemas/signup.ts
 import { Signup as GeneratedSignup } from './generated/signup.gen'
-import { ui } from '@ibc/schema-forms'
+import { ui } from '@csv/schema-forms'
 
 export const SignupSchema = GeneratedSignup.extend({
   email:    ui(GeneratedSignup.shape.email,    { label: 'Email',   col: { xs: 12, md: 6 } }),
@@ -1591,7 +1591,7 @@ This is the key move: the mock parses the request body with the **same Zod schem
 // apps/shell/src/mocks/handlers/users.ts
 import { http, HttpResponse } from 'msw'
 import { z } from 'zod'
-import { CreateUserSchema } from '@ibc/shared/data-access/schemas/user'
+import { CreateUserSchema } from '@csv/shared/data-access/schemas/user'
 import { problemJson, fieldErrors } from '../helpers/problemJson'
 
 export const userHandlers = [
@@ -1675,7 +1675,7 @@ export function seedFrom<T extends z.ZodTypeAny>(schema: T, count = 1): z.infer<
 
 ```ts
 // apps/shell/src/mocks/handlers/users.ts
-import { UserSchema } from '@ibc/shared/data-access/schemas/user'
+import { UserSchema } from '@csv/shared/data-access/schemas/user'
 import { seedFrom } from '../helpers/fromZodSchema'
 
 const SEED_USERS = seedFrom(UserSchema, 25)
@@ -1827,7 +1827,7 @@ Two touchpoints, that's it.
 ```ts
 // libs/shared/data-access/schemas/signup.ts
 import { z } from 'zod'
-import { ui } from '@ibc/schema-forms'
+import { ui } from '@csv/schema-forms'
 
 export const SignupSchema = z.object({
   email:    ui(z.string().email(),            { label: 'Email',   col: { xs: 12, md: 6 } }),
@@ -1843,8 +1843,8 @@ Notice what is *not* required: no `type:` (inferred from the Zod node in 90% of 
 
 ```tsx
 // apps/shell/src/pages/SignupPage.tsx
-import { SchemaForm } from '@ibc/schema-forms'
-import { SignupSchema } from '@ibc/shared/data-access/schemas/signup'
+import { SchemaForm } from '@csv/schema-forms'
+import { SignupSchema } from '@csv/shared/data-access/schemas/signup'
 
 export function SignupPage() {
   return (
@@ -1882,7 +1882,7 @@ This is the literal recipe a junior gets in the README. It should fit on one scr
 ```tsx
 // 1. Define the schema
 import { z } from 'zod'
-import { ui } from '@ibc/schema-forms'
+import { ui } from '@csv/schema-forms'
 
 export const ContactSchema = z.object({
   name:    ui(z.string().min(1),       { label: 'Name' }),
@@ -1891,7 +1891,7 @@ export const ContactSchema = z.object({
 })
 
 // 2. Render it
-import { SchemaForm } from '@ibc/schema-forms'
+import { SchemaForm } from '@csv/schema-forms'
 
 export function ContactPage() {
   return <SchemaForm schema={ContactSchema} onSubmit={send} />
@@ -1911,7 +1911,7 @@ Three imports. One schema. One component. Types flow from the schema to `send()`
 | Forgot to add `ui(...)` wrapper | Field still renders with type inferred from Zod + label derived from the field name (camel→Title Case). `console.warn` in dev tells them the convention. |
 | Used a `type` the registry doesn't know | `FallbackField` renders a visible warning Alert + a plain text input; the form still submits. Not a crash. |
 | Typo in `col` breakpoint key | TypeScript catches it (`col: { xs, sm, md, lg, xl }` is a typed interface). |
-| Wants to test the form | `renderWithProviders` from `@ibc/schema-forms/testing` wraps with MUI theme + QueryClient; they import it and their test works. |
+| Wants to test the form | `renderWithProviders` from `@csv/schema-forms/testing` wraps with MUI theme + QueryClient; they import it and their test works. |
 | Needs to reset after submit | `<SchemaForm resetOnSuccess />` one-prop behavior. |
 | Needs a custom submit button | `<SchemaForm actions={<MyActions />} />` children slot. |
 | Wants to prefill from URL / server | `defaultValues={{ email: session.email }}` prop. |
@@ -1956,10 +1956,10 @@ Run these before shipping:
 
 - [ ] A junior who has never seen the library can build the contact form in Section B.4 in under 10 minutes with only the quickstart open.
 - [ ] Their schema has **no `type`** properties -- inference covers every field they used.
-- [ ] They never import from `@ibc/schema-forms/core`, `@ibc/schema-forms/engines/*`, or any internal path. Default surface is enough.
+- [ ] They never import from `@csv/schema-forms/core`, `@csv/schema-forms/engines/*`, or any internal path. Default surface is enough.
 - [ ] Every default field has a Storybook page with working Controls they can copy args from.
 - [ ] When they break the schema (e.g. pass an unsupported Zod combinator), the dev-mode error names the field and tells them what to do.
-- [ ] The public TypeScript surface of `@ibc/schema-forms` has fewer than 20 exported names. (IR types, engine types, and internal helpers are not exported.)
+- [ ] The public TypeScript surface of `@csv/schema-forms` has fewer than 20 exported names. (IR types, engine types, and internal helpers are not exported.)
 
 If any of those fails, the abstraction leaked and needs sanding before release.
 
@@ -2005,7 +2005,7 @@ libs/
     data-access/                       # optional: Zod schemas for API + forms (dependency)
 ```
 
-The library name is `@ibc/schema-forms` (tag it `type:ui, scope:shared`). It depends on `@ibc/tokens` (for the MUI theme bridge) and peer-depends on `react`, `@mui/material`, `zod`, and optionally `@tanstack/react-form` / `react-hook-form`. Consumer apps install whichever engine(s) they use.
+The library name is `@csv/schema-forms` (tag it `type:ui, scope:shared`). It depends on `@csv/tokens` (for the MUI theme bridge) and peer-depends on `react`, `@mui/material`, `zod`, and optionally `@tanstack/react-form` / `react-hook-form`. Consumer apps install whichever engine(s) they use.
 
 ### B.2 Generate the library
 
@@ -2015,7 +2015,7 @@ nx g @nx/react:library libs/ibc/schema-forms \
   --bundler=vite \
   --unitTestRunner=vitest \
   --buildable \
-  --importPath=@ibc/schema-forms \
+  --importPath=@csv/schema-forms \
   --tags="type:ui,scope:shared" \
   --component=false \
   --directory=libs/ibc/schema-forms
@@ -2024,7 +2024,7 @@ nx g @nx/react:library libs/ibc/schema-forms \
 Flags that matter:
 
 - `--bundler=vite` aligns with the rest of the stack and produces an ESM-first output with type declarations.
-- `--buildable` creates a `build` target. Use `--publishable --importPath=@ibc/schema-forms` instead if you plan to publish to npm or a private registry.
+- `--buildable` creates a `build` target. Use `--publishable --importPath=@csv/schema-forms` instead if you plan to publish to npm or a private registry.
 - `--component=false` suppresses the default `<SchemaForms>` stub -- the framework exposes `<SchemaForm>` from its own folder.
 - `--tags` are enforced by `@nx/enforce-module-boundaries` so apps can import the library only when their scope permits.
 
@@ -2071,7 +2071,7 @@ Per Section 1 of the architecture skill, expose specific entry points instead of
 
 ```jsonc
 {
-  "name": "@ibc/schema-forms",
+  "name": "@csv/schema-forms",
   "version": "0.1.0",
   "sideEffects": false,
   "type": "module",
@@ -2104,12 +2104,12 @@ Per Section 1 of the architecture skill, expose specific entry points instead of
 Consumers pull what they need:
 
 ```ts
-import { SchemaForm, ui } from '@ibc/schema-forms'
-import { tanstackEngine } from '@ibc/schema-forms/engines/tanstack'
-import { MyBrandedTextField } from '@ibc/schema-forms/fields'
+import { SchemaForm, ui } from '@csv/schema-forms'
+import { tanstackEngine } from '@csv/schema-forms/engines/tanstack'
+import { MyBrandedTextField } from '@csv/schema-forms/fields'
 ```
 
-The two engines are behind their own subpath exports so if an app only installs `@tanstack/react-form` it never pulls `react-hook-form` into its bundle, and vice versa. The `peerDependenciesMeta` block marks both engines optional so `npm install @ibc/schema-forms` does not warn when only one is installed.
+The two engines are behind their own subpath exports so if an app only installs `@tanstack/react-form` it never pulls `react-hook-form` into its bundle, and vice versa. The `peerDependenciesMeta` block marks both engines optional so `npm install @csv/schema-forms` does not warn when only one is installed.
 
 ### B.5 Module boundary tags
 
@@ -2122,9 +2122,9 @@ Add these constraints to `eslint.config.mjs` (the skill already defines the stru
 
 Consequences:
 
-- `@ibc/schema-forms` may import `@ibc/tokens` (`scope:shared, type:util`) but **not** from any `scope:shell` or `scope:agent` lib. This keeps the framework genuinely shared.
+- `@csv/schema-forms` may import `@csv/tokens` (`scope:shared, type:util`) but **not** from any `scope:shell` or `scope:agent` lib. This keeps the framework genuinely shared.
 - Apps of any scope may depend on it, because apps have `type:app` which dep-constraints allow to consume shared `type:ui` libs.
-- `@ibc/schema-forms` may import `@ibc/ui` (the atomic design system) if you want shared atoms as the fallback for custom field components. Keep that dep one-way and optional.
+- `@csv/schema-forms` may import `@csv/ui` (the atomic design system) if you want shared atoms as the fallback for custom field components. Keep that dep one-way and optional.
 
 ### B.6 Library-scoped Storybook
 
@@ -2133,7 +2133,7 @@ Each library gets its own Storybook instance (the skill endorses Storybook compo
 ```
 libs/ibc/schema-forms/.storybook/
   main.ts       # stories glob: '../src/**/*.stories.@(ts|tsx)'
-  preview.ts    # imports @ibc/tokens CSS + MUI ThemeProvider + MSW loader
+  preview.ts    # imports @csv/tokens CSS + MUI ThemeProvider + MSW loader
   theme.ts
 ```
 
@@ -2154,9 +2154,9 @@ Pick one up front; switching later is a small config change but noisy in git.
 | Mode | When to use | Effect |
 |------|-------------|--------|
 | **Buildable** | Monorepo-only consumption. Apps import via TS path alias; Nx caches the build output. | `nx build ibc-schema-forms` produces `dist/libs/ibc/schema-forms` used by app bundlers during dev and build. No version bumps. |
-| **Publishable** | Cross-repo or open-sourcing. | Same as buildable, plus `release` target wiring (nx release / changesets) that publishes `@ibc/schema-forms` to a registry with semver versioning and a CHANGELOG. |
+| **Publishable** | Cross-repo or open-sourcing. | Same as buildable, plus `release` target wiring (nx release / changesets) that publishes `@csv/schema-forms` to a registry with semver versioning and a CHANGELOG. |
 
-Start buildable. If a second repo needs it, promote to publishable with `nx g @nx/react:library ... --publishable --importPath=@ibc/schema-forms` applied as a patch to `package.json` + add `nx release` config.
+Start buildable. If a second repo needs it, promote to publishable with `nx g @nx/react:library ... --publishable --importPath=@csv/schema-forms` applied as a patch to `package.json` + add `nx release` config.
 
 ### B.8 Consumer wiring (app side)
 
@@ -2164,8 +2164,8 @@ In the consuming app (`apps/shell`), installation is transparent because Nx link
 
 ```tsx
 // apps/shell/src/pages/SignupPage.tsx
-import { SchemaForm } from '@ibc/schema-forms'
-import { SignupSchema } from '@ibc/shared/data-access/schemas/signup'
+import { SchemaForm } from '@csv/schema-forms'
+import { SignupSchema } from '@csv/shared/data-access/schemas/signup'
 
 export function SignupPage() {
   return (
@@ -2178,7 +2178,7 @@ export function SignupPage() {
 }
 ```
 
-`@ibc/shared/data-access` hosts the Zod schemas that back both forms (via `@ibc/schema-forms`) and API response validation (via `@ibc/shared/data-access`). Section 8 of the skill already enforces this "one schema, shared for form + API" pattern; `schema-forms` just consumes whatever schemas live there.
+`@csv/shared/data-access` hosts the Zod schemas that back both forms (via `@csv/schema-forms`) and API response validation (via `@csv/shared/data-access`). Section 8 of the skill already enforces this "one schema, shared for form + API" pattern; `schema-forms` just consumes whatever schemas live there.
 
 ### B.9 Affected graph
 
@@ -2193,9 +2193,9 @@ Because the library is a first-class Nx project, the affected graph reacts corre
 If Phase 0-8 of Section 13 have already been executed in the current single-package repo and you later want to promote the code into an Nx monorepo:
 
 1. `npx create-nx-workspace@latest ibc --preset=apps` in a sibling directory.
-2. `nx g @nx/react:library libs/ibc/schema-forms --importPath=@ibc/schema-forms --buildable --bundler=vite --unitTestRunner=vitest --tags=type:ui,scope:shared --component=false`.
+2. `nx g @nx/react:library libs/ibc/schema-forms --importPath=@csv/schema-forms --buildable --bundler=vite --unitTestRunner=vitest --tags=type:ui,scope:shared --component=false`.
 3. Move `libs/shared/schema-forms/src/framework/*` → `libs/ibc/schema-forms/src/lib/*` (one-to-one; no restructuring required).
-4. Update relative imports: inside the lib use relative paths; across libs use `@ibc/*` path aliases from `tsconfig.base.json`.
+4. Update relative imports: inside the lib use relative paths; across libs use `@csv/*` path aliases from `tsconfig.base.json`.
 5. Copy `libs/shared/schema-forms/src/framework/*.stories.tsx` in place; wire the library Storybook from Section A.6.
 6. Port `apps/shell/src/*` to `apps/demo/src/` (or fold into `apps/shell` as a showcase route).
 7. Convert the `SignupSchema` / `ProfileSchema` etc. to live in `libs/shared/data-access/schemas/` so both forms and APIs consume them.
@@ -2203,7 +2203,7 @@ If Phase 0-8 of Section 13 have already been executed in the current single-pack
 9. Add tags + boundary constraints; run `nx lint` and fix violations until clean.
 10. `nx affected -t lint test build storybook` green → done.
 
-Because the single-package scaffold mirrors the lib's internal folder layout (core/engines/renderer/fields/hooks/testing), step 3 is a `git mv` tree, not a rewrite. No import paths above the `framework/` boundary need to change: `@/framework/*` becomes `@ibc/schema-forms`.
+Because the single-package scaffold mirrors the lib's internal folder layout (core/engines/renderer/fields/hooks/testing), step 3 is a `git mv` tree, not a rewrite. No import paths above the `framework/` boundary need to change: `@/framework/*` becomes `@csv/schema-forms`.
 
 ### B.11 Acceptance checklist for the Nx packaging
 
@@ -2211,7 +2211,7 @@ Because the single-package scaffold mirrors the lib's internal folder layout (co
 - [ ] `nx test ibc-schema-forms` runs unit + engine-parity contract tests green.
 - [ ] `nx storybook ibc-schema-forms` serves stories on :6007 with a11y addon clean.
 - [ ] `nx lint ibc-schema-forms` passes with module-boundary constraints active.
-- [ ] A consumer app can `import { SchemaForm } from '@ibc/schema-forms'` and `import { tanstackEngine } from '@ibc/schema-forms/engines/tanstack'` with zero barrel imports.
+- [ ] A consumer app can `import { SchemaForm } from '@csv/schema-forms'` and `import { tanstackEngine } from '@csv/schema-forms/engines/tanstack'` with zero barrel imports.
 - [ ] Installing only one of the two form engines in the app still builds (peer meta `optional: true`).
 - [ ] `nx graph` shows `ibc-schema-forms` as a shared node depended on by shell/agent/demo apps, with no inbound edges from scope-specific libs.
 
@@ -2251,7 +2251,7 @@ Starting on v7 means we get:
 
 Three choices in Sections 5-7 make version churn absorbable:
 
-1. **We don't re-export MUI components.** Every default field is a *wrapper* around MUI primitives. Consumers import `TextField` from `@ibc/schema-forms/fields`, not `@mui/material`. A major MUI bump touches ~10 files in `libs/shared/schema-forms/src/framework/fields/*`, not the consuming app's call-sites.
+1. **We don't re-export MUI components.** Every default field is a *wrapper* around MUI primitives. Consumers import `TextField` from `@csv/schema-forms/fields`, not `@mui/material`. A major MUI bump touches ~10 files in `libs/shared/schema-forms/src/framework/fields/*`, not the consuming app's call-sites.
 2. **Styling is theme + `sx`, never deprecated `@mui/system` layout props.** Grid v2 and `sx` are the long-term MUI API. Safe across v7 → v9.
 3. **The `FieldBinding` contract is MUI-free.** `{ value, onChange, onBlur, error, touched, dirty, isValidating, name }` is a plain shape. Swapping the rendering layer doesn't touch the engine adapters, the compile step, or the registry.
 

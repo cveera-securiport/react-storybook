@@ -21,6 +21,16 @@ const meta: Meta<typeof SearchBar> = {
 export default meta
 type Story = StoryObj<typeof SearchBar>
 
+function WithValueStory() {
+  const [value, setValue] = useState('React')
+  return <SearchBar value={value} onChange={setValue} onClear={() => setValue('')} />
+}
+
+function EmptyValueStory() {
+  const [value, setValue] = useState('')
+  return <SearchBar value={value} onChange={setValue} />
+}
+
 export const Default: Story = {}
 
 export const WithPlaceholder: Story = {
@@ -30,21 +40,9 @@ export const WithPlaceholder: Story = {
 }
 
 export const WithValue: Story = {
-  render: () => {
-    const [value, setValue] = useState('React')
-    return (
-      <SearchBar
-        value={value}
-        onChange={setValue}
-        onClear={() => setValue('')}
-      />
-    )
-  },
+  render: () => <WithValueStory />,
 }
 
 export const Empty: Story = {
-  render: () => {
-    const [value, setValue] = useState('')
-    return <SearchBar value={value} onChange={setValue} />
-  },
+  render: () => <EmptyValueStory />,
 }

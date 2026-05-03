@@ -1,5 +1,5 @@
-import React from 'react'
-import styles from './Tooltip.module.css'
+import type React from 'react'
+import MuiTooltip from '@mui/material/Tooltip'
 
 export interface TooltipProps {
   content: string
@@ -12,12 +12,16 @@ export const Tooltip: React.FC<TooltipProps> = ({
   placement = 'top',
   children,
 }) => {
+  const placementMap = {
+    top: 'top',
+    bottom: 'bottom',
+    left: 'left',
+    right: 'right',
+  } as const
+
   return (
-    <div className={styles.wrapper}>
-      {children}
-      <div className={`${styles.tooltip} ${styles[placement]}`} role="tooltip">
-        {content}
-      </div>
-    </div>
+    <MuiTooltip title={content} placement={placementMap[placement]} arrow>
+      <span>{children}</span>
+    </MuiTooltip>
   )
 }

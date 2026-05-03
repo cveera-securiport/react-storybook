@@ -100,3 +100,15 @@ CSS Modules were chosen for this demo because they:
 ### Where do design tokens come from in a real project?
 
 In production, tokens are typically exported from a design tool (Figma, Tokens Studio) as JSON and transformed into CSS custom properties via a build step (e.g. Style Dictionary). In this demo, they're hand-authored in `src/tokens/design-tokens.css` for simplicity. The consumption pattern (CSS Modules using `var(--token)`) stays the same either way.
+
+---
+
+### How should we use MUI in this hybrid setup?
+
+Use MUI as a themed component engine, not a second design language.
+
+- **Theme-first:** define visual defaults in `@csv/mui-theme` (`palette`, `typography`, `shape`, and component overrides) and map values to CSS token variables.
+- **Token fidelity:** keep colors, spacing, font sizes, and radii sourced from `@csv/tokens/tokens/design-tokens.css`; avoid hardcoded hex/radius/spacing values in component files.
+- **`sx` vs reusable styles:** use `sx` for local layout tweaks; if styling is reused in multiple places, move it to theme component overrides or a wrapper component API.
+- **Wrapper policy:** prefer extending existing `@csv/ui` component APIs with MUI-backed internals instead of exposing raw MUI components directly across the app.
+- **Migration policy:** net-new features should use MUI-backed components; legacy components can be migrated when touched to avoid big-bang rewrites.

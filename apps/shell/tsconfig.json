@@ -17,12 +17,14 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true,
     "paths": {
-      "@ibc/ui": ["../../libs/shared/ui/src/index.ts"],
-      "@ibc/ui/*": ["../../libs/shared/ui/src/*"],
-      "@ibc/tokens": ["../../libs/shared/tokens/src/index.ts"],
-      "@ibc/tokens/*": ["../../libs/shared/tokens/src/*"],
-      "@ibc/schema-forms": ["../../libs/shared/schema-forms/src/index.ts"],
-      "@ibc/schema-forms/*": ["../../libs/shared/schema-forms/src/*"]
+      "@csv/ui": ["../../libs/shared/ui/src/index.ts"],
+      "@csv/ui/*": ["../../libs/shared/ui/src/*"],
+      "@csv/tokens": ["../../libs/shared/tokens/src/index.ts"],
+      "@csv/tokens/*": ["../../libs/shared/tokens/src/*"],
+      "@csv/mui-theme": ["../../libs/shared/mui-theme/src/index.ts"],
+      "@csv/mui-theme/*": ["../../libs/shared/mui-theme/src/*"],
+      "@csv/schema-forms": ["../../libs/shared/schema-forms/src/index.ts"],
+      "@csv/schema-forms/*": ["../../libs/shared/schema-forms/src/*"]
     }
   },
   "include": ["src", "../../libs/shared/*/src"],

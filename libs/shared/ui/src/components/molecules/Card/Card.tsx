@@ -1,5 +1,10 @@
-import React from 'react'
-import styles from './Card.module.css'
+import type React from 'react'
+import MuiCard from '@mui/material/Card'
+import CardContent from '@mui/material/CardContent'
+import CardMedia from '@mui/material/CardMedia'
+import CardActions from '@mui/material/CardActions'
+import Typography from '@mui/material/Typography'
+import Box from '@mui/material/Box'
 
 export interface CardProps {
   variant?: 'default' | 'stat'
@@ -22,24 +27,38 @@ export const Card: React.FC<CardProps> = ({
 }) => {
   if (variant === 'stat') {
     return (
-      <div className={`${styles.card} ${styles.stat}`}>
-        <div className={styles.body}>
-          <div className={styles.statValue}>{statValue}</div>
-          <div className={styles.statLabel}>{title}</div>
-        </div>
-      </div>
+      <MuiCard>
+        <CardContent>
+          <Typography variant="h4" component="div">
+            {statValue}
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            {title}
+          </Typography>
+        </CardContent>
+      </MuiCard>
     )
   }
 
   return (
-    <div className={styles.card}>
-      {image && <img className={styles.image} src={image} alt={title} />}
-      <div className={styles.body}>
-        <h3 className={styles.title}>{title}</h3>
-        {description && <p className={styles.description}>{description}</p>}
+    <MuiCard>
+      {image && <CardMedia component="img" height="180" image={image} alt={title} />}
+      <CardContent>
+        <Typography variant="h6" component="h3" gutterBottom>
+          {title}
+        </Typography>
+        {description && (
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+            {description}
+          </Typography>
+        )}
         {children}
-      </div>
-      {footer && <div className={styles.footer}>{footer}</div>}
-    </div>
+      </CardContent>
+      {footer ? (
+        <CardActions>
+          <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', width: '100%' }}>{footer}</Box>
+        </CardActions>
+      ) : null}
+    </MuiCard>
   )
 }

@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
-import { LoginPage, Dashboard } from '@ibc/ui'
+import { LoginPage, Dashboard } from '@csv/ui'
 
 function LoginRoute() {
   const navigate = useNavigate()

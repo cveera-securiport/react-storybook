@@ -14,6 +14,11 @@ const meta: Meta<typeof Toggle> = {
 export default meta
 type Story = StoryObj<typeof Toggle>
 
+function InteractiveToggleStory() {
+  const [on, setOn] = React.useState(false)
+  return <Toggle checked={on} onChange={setOn} label="Interactive" />
+}
+
 export const Default: Story = {
   args: {
     checked: false,
@@ -63,8 +68,5 @@ export const Sizes: Story = {
 }
 
 export const Interactive: Story = {
-  render: () => {
-    const [on, setOn] = React.useState(false)
-    return <Toggle checked={on} onChange={setOn} label="Interactive" />
-  },
+  render: () => <InteractiveToggleStory />,
 }

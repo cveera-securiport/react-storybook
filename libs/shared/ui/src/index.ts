@@ -1,4 +1,4 @@
-// Public API for @ibc/ui
+// Public API for @csv/ui
 // Atoms
 export { Avatar } from './components/atoms/Avatar/Avatar'
 export { Badge } from './components/atoms/Badge/Badge'

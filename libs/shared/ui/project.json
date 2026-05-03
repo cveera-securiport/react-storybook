@@ -13,10 +13,18 @@
       }
     },
     "test": {
-      "executor": "@nx/vite:test",
+      "executor": "@nx/vitest:test",
       "outputs": ["{workspaceRoot}/coverage/libs/shared/ui"],
       "options": {
+        "config": "libs/shared/ui/vite.config.ts",
+        "passWithNoTests": true,
         "reportsDirectory": "../../../coverage/libs/shared/ui"
+      }
+    },
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "eslint libs/shared/ui/src --ext .ts,.tsx"
       }
     }
   }

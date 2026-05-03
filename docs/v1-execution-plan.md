@@ -265,8 +265,8 @@ export function createRegistry(): FieldRegistry { /* Map-backed */ }
 Each component pattern (example for `TextField`):
 
 ```tsx
-export function SchemaTextField({ spec, binding }: FieldComponentProps) {
-  const showError = binding.touched && !!binding.error
+export type FieldType = 'file' | 'text' | 'password' | 'email' | 'number' | 'textarea' | 'select' |
+  'checkbox' | 'switch' | 'radio' | 'date' | 'object' | 'array' | (string & {})
   return (
     <MuiTextField
       name={binding.name}

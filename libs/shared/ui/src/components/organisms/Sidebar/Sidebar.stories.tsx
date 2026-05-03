@@ -80,6 +80,17 @@ const meta: Meta<typeof Sidebar> = {
 export default meta
 type Story = StoryObj<typeof Sidebar>
 
+function InteractiveSidebarStory(args: React.ComponentProps<typeof Sidebar>) {
+  const [collapsed, setCollapsed] = React.useState(false)
+  return (
+    <Sidebar
+      {...args}
+      collapsed={collapsed}
+      onToggleCollapse={() => setCollapsed((c) => !c)}
+    />
+  )
+}
+
 export const Default: Story = {
   args: {
     sections: sampleSections,
@@ -101,16 +112,7 @@ export const Interactive: Story = {
     sections: sampleSections,
     title: 'Navigation',
   },
-  render: (args) => {
-    const [collapsed, setCollapsed] = React.useState(false)
-    return (
-      <Sidebar
-        {...args}
-        collapsed={collapsed}
-        onToggleCollapse={() => setCollapsed((c) => !c)}
-      />
-    )
-  },
+  render: (args) => <InteractiveSidebarStory {...args} />,
 }
 
 export const WithSections: Story = {

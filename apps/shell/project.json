@@ -36,6 +36,12 @@
           "mode": "production"
         }
       }
+    },
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "eslint apps/shell/src --ext .ts,.tsx"
+      }
     }
   }
 }

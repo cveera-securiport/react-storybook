@@ -1,3 +1,3 @@
-// Public API for @ibc/tokens
+// Public API for @csv/tokens
 // Re-export the design tokens CSS path for consumers to import
-// Usage: import '@ibc/tokens/design-tokens.css'
+// Usage: import '@csv/tokens/design-tokens.css'
