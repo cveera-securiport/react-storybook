@@ -107,8 +107,8 @@ In production, tokens are typically exported from a design tool (Figma, Tokens S
 
 Use MUI as a themed component engine, not a second design language.
 
-- **Theme-first:** define visual defaults in `@ibc/mui-theme` (`palette`, `typography`, `shape`, and component overrides) and map values to CSS token variables.
-- **Token fidelity:** keep colors, spacing, font sizes, and radii sourced from `@ibc/tokens/tokens/design-tokens.css`; avoid hardcoded hex/radius/spacing values in component files.
+- **Theme-first:** define visual defaults in `@csv/mui-theme` (`palette`, `typography`, `shape`, and component overrides) and map values to CSS token variables.
+- **Token fidelity:** keep colors, spacing, font sizes, and radii sourced from `@csv/tokens/tokens/design-tokens.css`; avoid hardcoded hex/radius/spacing values in component files.
 - **`sx` vs reusable styles:** use `sx` for local layout tweaks; if styling is reused in multiple places, move it to theme component overrides or a wrapper component API.
-- **Wrapper policy:** prefer extending existing `@ibc/ui` component APIs with MUI-backed internals instead of exposing raw MUI components directly across the app.
+- **Wrapper policy:** prefer extending existing `@csv/ui` component APIs with MUI-backed internals instead of exposing raw MUI components directly across the app.
 - **Migration policy:** net-new features should use MUI-backed components; legacy components can be migrated when touched to avoid big-bang rewrites.

@@ -13,9 +13,11 @@
       }
     },
     "test": {
-      "executor": "@nx/vite:test",
+      "executor": "@nx/vitest:test",
       "outputs": ["{workspaceRoot}/coverage/libs/shared/schema-forms"],
       "options": {
+        "config": "libs/shared/schema-forms/vitest.config.ts",
+        "passWithNoTests": true,
         "reportsDirectory": "../../../coverage/libs/shared/schema-forms"
       }
     },

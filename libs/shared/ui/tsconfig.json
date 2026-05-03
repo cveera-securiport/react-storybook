@@ -19,8 +19,8 @@
     "composite": true,
     "outDir": "../../../dist/out-tsc",
     "paths": {
-      "@ibc/tokens": ["../tokens/src/index.ts"],
-      "@ibc/tokens/*": ["../tokens/src/*"]
+      "@csv/tokens": ["../tokens/src/index.ts"],
+      "@csv/tokens/*": ["../tokens/src/*"]
     }
   },
   "include": ["src"]

@@ -56,7 +56,7 @@ apps/
 
 libs/
   shared/
-    ui/                      # @ibc/ui — all UI components
+    ui/                      # @csv/ui — all UI components
       src/
         components/
           atoms/             # Button, Input, Badge, Avatar, Toggle
@@ -64,10 +64,10 @@ libs/
           organisms/         # Navbar, Sidebar, DataTable, Form
           pages/             # LoginPage, Dashboard
         index.ts             # Public API barrel export
-    tokens/                  # @ibc/tokens — design tokens
+    tokens/                  # @csv/tokens — design tokens
       src/
         design-tokens.css    # CSS custom properties
-    schema-forms/            # @ibc/schema-forms — schema-driven forms (planned)
+    schema-forms/            # @csv/schema-forms — schema-driven forms (planned)
       src/
         index.ts
 
@@ -83,9 +83,9 @@ docs/                        # Architecture and usage guides
 
 | Alias | Resolves to |
 |-------|-------------|
-| `@ibc/ui` | `libs/shared/ui/src` |
-| `@ibc/tokens` | `libs/shared/tokens/src` |
-| `@ibc/schema-forms` | `libs/shared/schema-forms/src` |
+| `@csv/ui` | `libs/shared/ui/src` |
+| `@csv/tokens` | `libs/shared/tokens/src` |
+| `@csv/schema-forms` | `libs/shared/schema-forms/src` |
 
 ## The Shell App
 
@@ -96,7 +96,7 @@ Running `pnpm dev` launches a working application with two routes:
 
 All other routes redirect to `/login`.
 
-## Component Library (`@ibc/ui`)
+## Component Library (`@csv/ui`)
 
 Components follow **atomic design** principles and live under `libs/shared/ui/src/components/`.
 
@@ -131,7 +131,7 @@ Full page compositions demonstrating how everything fits together.
 - **LoginPage** -- Split-screen login with hero, form, and validation
 - **Dashboard** -- Navbar + Sidebar + stat cards + data table
 
-## Design Tokens (`@ibc/tokens`)
+## Design Tokens (`@csv/tokens`)
 
 All visual decisions (colors, typography, spacing, radii, shadows) are defined as CSS custom properties in `libs/shared/tokens/src/design-tokens.css` and imported globally into Storybook via `.storybook/preview.ts`.
 
@@ -155,5 +155,5 @@ Detailed guides live in the `docs/` folder:
 | [Addons and Tooling](docs/addons-and-tooling.md) | Installed addons, Storybook MCP addon for AI agents, CI testing |
 | [FAQ](docs/faq.md) | Data mocking, layout, viewports, autodocs, CSS Modules, design tokens |
 | [Troubleshooting](docs/troubleshooting.md) | Common issues and solutions |
-| [Schema-Driven UI Framework Plan](docs/schema-driven-ui-framework-plan.md) | Architecture for `@ibc/schema-forms` |
+| [Schema-Driven UI Framework Plan](docs/schema-driven-ui-framework-plan.md) | Architecture for `@csv/schema-forms` |
 | [V1 Execution Plan](docs/v1-execution-plan.md) | 5-day implementation plan for schema-forms v1 |

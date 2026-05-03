@@ -9,18 +9,8 @@ export default defineConfig({
   resolve: {
     alias: {
       '@csv/tokens': resolve(__dirname, '../tokens/src'),
+      '@csv/ui': resolve(__dirname, '../ui/src'),
     },
-  },
-  build: {
-    lib: {
-      entry: resolve(__dirname, 'src/index.ts'),
-      formats: ['es'],
-      fileName: 'index',
-    },
-    rollupOptions: {
-      external: ['react', 'react-dom', 'react/jsx-runtime'],
-    },
-    cssCodeSplit: true,
   },
   test: {
     globals: true,
@@ -28,7 +18,7 @@ export default defineConfig({
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
     coverage: {
       provider: 'v8',
-      reportsDirectory: '../../../coverage/libs/shared/ui',
+      reportsDirectory: '../../../coverage/libs/shared/schema-forms',
     },
   },
 })

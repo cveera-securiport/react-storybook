@@ -1,10 +1,11 @@
 import type React from 'react'
+import Box from '@mui/material/Box'
 import MuiButton from '@mui/material/Button'
+import type { ButtonProps as MuiButtonProps } from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
-import Stack from '@mui/material/Stack'
 
 export interface ButtonProps
-  extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'disabled'> {
+  extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'disabled' | 'color' | 'size'> {
   variant?: 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger'
   size?: 'sm' | 'md' | 'lg'
   disabled?: boolean
@@ -25,16 +26,19 @@ export const Button: React.FC<ButtonProps> = ({
   onClick,
   ...rest
 }) => {
-  const muiVariant = variant === 'outline' ? 'outlined' : variant === 'ghost' ? 'text' : 'contained'
-  const muiColor =
+  const muiVariant: 'contained' | 'outlined' | 'text' =
+    variant === 'outline' ? 'outlined' : variant === 'ghost' ? 'text' : 'contained'
+  const muiColor: NonNullable<MuiButtonProps['color']> =
     variant === 'secondary' ? 'secondary' : variant === 'danger' ? 'error' : 'primary'
+  const muiSize: 'small' | 'medium' | 'large' =
+    size === 'sm' ? 'small' : size === 'lg' ? 'large' : 'medium'
 
   return (
     <MuiButton
       type={type as 'button' | 'submit' | 'reset'}
       variant={muiVariant}
       color={muiColor}
-      size={size}
+      size={muiSize}
       className={className}
       disabled={disabled || loading}
       onClick={onClick}
@@ -43,10 +47,10 @@ export const Button: React.FC<ButtonProps> = ({
       {...rest}
     >
       {loading ? (
-        <Stack direction="row" spacing={1} alignItems="center">
+        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
           <CircularProgress size={16} color="inherit" />
           <span>{children}</span>
-        </Stack>
+        </Box>
       ) : (
         children
       )}

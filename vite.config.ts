@@ -6,9 +6,10 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      '@ibc/ui': resolve(__dirname, 'libs/shared/ui/src'),
-      '@ibc/tokens': resolve(__dirname, 'libs/shared/tokens/src'),
-      '@ibc/schema-forms': resolve(__dirname, 'libs/shared/schema-forms/src'),
+      '@csv/ui': resolve(__dirname, 'libs/shared/ui/src'),
+      '@csv/tokens': resolve(__dirname, 'libs/shared/tokens/src'),
+      '@csv/mui-theme': resolve(__dirname, 'libs/shared/mui-theme/src'),
+      '@csv/schema-forms': resolve(__dirname, 'libs/shared/schema-forms/src'),
     },
   },
 })

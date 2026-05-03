@@ -19,10 +19,10 @@
     "composite": true,
     "outDir": "../../../dist/out-tsc",
     "paths": {
-      "@ibc/tokens": ["../tokens/src/index.ts"],
-      "@ibc/tokens/*": ["../tokens/src/*"],
-      "@ibc/ui": ["../ui/src/index.ts"],
-      "@ibc/ui/*": ["../ui/src/*"]
+      "@csv/tokens": ["../tokens/src/index.ts"],
+      "@csv/tokens/*": ["../tokens/src/*"],
+      "@csv/ui": ["../ui/src/index.ts"],
+      "@csv/ui/*": ["../ui/src/*"]
     }
   },
   "include": ["src"]

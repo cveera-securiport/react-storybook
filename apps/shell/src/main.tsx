@@ -1,6 +1,6 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import { AppThemeProvider } from '@ibc/mui-theme'
+import { AppThemeProvider } from '@csv/mui-theme'
 import App from './App'
 import './index.css'
 

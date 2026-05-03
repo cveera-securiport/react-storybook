@@ -9,7 +9,7 @@ Step-by-step plan to stand up the enterprise frontend monorepo defined in `.curs
 > Goal: Empty Nx workspace with all DX tooling configured.
 
 - [ ] Create Nx workspace (`npx create-nx-workspace@latest --preset=apps`)
-- [ ] Configure `tsconfig.base.json` with strict mode, path aliases (`@ibc/*`, `@shell/*`, `@agent/*`, `@shared/*`)
+- [ ] Configure `tsconfig.base.json` with strict mode, path aliases (`@csv/*`, `@shell/*`, `@agent/*`, `@shared/*`)
 - [ ] Set up ESLint flat config (`eslint.config.mjs`)
   - [ ] `typescript-eslint` strict type-checked rules
   - [ ] `eslint-plugin-jsx-a11y` recommended
@@ -171,7 +171,7 @@ Each atom: component wrapping MUI + stories file. No `.module.css` for MUI wrapp
 
 - [ ] Run all Storybook interaction tests: `npx test-storybook`
 - [ ] Run accessibility checks on all stories (addon-a11y)
-- [ ] Verify direct imports work: `import { Button } from '@ibc/ui/atoms/Button'`
+- [ ] Verify direct imports work: `import { Button } from '@csv/ui/atoms/Button'`
 
 ---
 

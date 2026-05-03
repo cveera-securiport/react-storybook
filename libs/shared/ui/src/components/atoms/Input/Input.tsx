@@ -26,7 +26,8 @@ export const Input: React.FC<InputProps> = ({
   value,
   onChange,
 }) => {
-  const color = state === 'success' ? 'success' : state === 'error' ? 'error' : 'primary'
+  const color: 'primary' | 'success' | 'error' =
+    state === 'success' ? 'success' : state === 'error' ? 'error' : 'primary'
   const resolvedSize = size === 'lg' ? 'medium' : size === 'sm' ? 'small' : 'medium'
 
   return (
@@ -48,14 +49,16 @@ export const Input: React.FC<InputProps> = ({
           ...(size === 'lg' ? { minHeight: '3rem', fontSize: 'var(--text-lg)' } : {}),
         },
       }}
-      InputLabelProps={{
-        htmlFor: id,
-      }}
-      inputProps={{
-        id,
-      }}
-      FormHelperTextProps={{
-        sx: state === 'success' ? { color: 'var(--color-success-600)' } : undefined,
+      slotProps={{
+        inputLabel: {
+          htmlFor: id,
+        },
+        htmlInput: {
+          id,
+        },
+        formHelperText: {
+          sx: state === 'success' ? { color: 'var(--color-success-600)' } : undefined,
+        },
       }}
     />
   )

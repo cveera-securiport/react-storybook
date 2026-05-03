@@ -166,11 +166,11 @@ Instead, import components directly from their source file:
 
 ```ts
 // Good: direct import
-import { Button } from '@ibc/ui/atoms/Button/Button'
-import { Card } from '@ibc/ui/molecules/Card/Card'
+import { Button } from '@csv/ui/atoms/Button/Button'
+import { Card } from '@csv/ui/molecules/Card/Card'
 
 // Bad: barrel import pulls in everything
-import { Button, Card } from '@ibc/ui'
+import { Button, Card } from '@csv/ui'
 ```
 
 Configure each library's `package.json` `exports` field to expose granular entry points:
@@ -186,7 +186,7 @@ Configure each library's `package.json` `exports` field to expose granular entry
 }
 ```
 
-This gives consumers clean import paths (`@ibc/ui/atoms/Button`) without the tree-shaking penalty of a single barrel file.
+This gives consumers clean import paths (`@csv/ui/atoms/Button`) without the tree-shaking penalty of a single barrel file.
 
 ---
 
@@ -648,7 +648,7 @@ Wrap the app at the root:
 
 ```tsx
 import { ThemeProvider, CssBaseline } from '@mui/material'
-import { theme } from '@ibc/tokens'
+import { theme } from '@csv/tokens'
 
 function App() {
   return (
@@ -783,7 +783,7 @@ npm install @pigment-css/vite-plugin
 ```ts
 // vite.config.ts
 import { pigment } from '@pigment-css/vite-plugin'
-import { theme } from '@ibc/tokens'
+import { theme } from '@csv/tokens'
 
 export default defineConfig({
   plugins: [
@@ -807,7 +807,7 @@ npm install -D @storybook/addon-themes @fontsource/roboto @fontsource/material-i
 // .storybook/preview.ts
 import { withThemeFromJSXProvider } from '@storybook/addon-themes'
 import { ThemeProvider, CssBaseline } from '@mui/material'
-import { theme } from '@ibc/tokens'
+import { theme } from '@csv/tokens'
 
 export const decorators = [
   withThemeFromJSXProvider({
@@ -1222,7 +1222,7 @@ export type UpdateUserInput = z.infer<typeof UpdateUserSchema>
 ```tsx
 import { useForm } from '@tanstack/react-form'
 import { zodValidator } from '@tanstack/zod-form-adapter'
-import { CreateUserSchema, type CreateUserInput } from '@ibc/data-access/schemas/user'
+import { CreateUserSchema, type CreateUserInput } from '@csv/data-access/schemas/user'
 
 function CreateUserForm({ onSubmit }: { onSubmit: (data: CreateUserInput) => void }) {
   const form = useForm({
